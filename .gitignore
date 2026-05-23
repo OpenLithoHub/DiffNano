@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# Private development plans — never commit
+plans/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+*.egg
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
