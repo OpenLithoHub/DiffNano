@@ -1,4 +1,4 @@
-"""Process-variation-robust optimization (C5 mechanism)."""
+"""Process-variation-robust optimization (C5 + C7 mechanisms)."""
 
 from diffnano.design.robustness.core import (
     antithetic_sampler,
@@ -16,4 +16,32 @@ __all__ = [
     "relaxed_heaviside_perturbation",
     "antithetic_sampler",
     "robust_gradient_step",
+    "AdaptiveRobustOptimizer",
+    "FabricableSubspaceProjection",
+    "axial_samples",
+    "correlated_perturbation",
+    "MultiAxisPerturbation",
+    "sidewall_angle_perturbation",
+    "thickness_perturbation",
+    "corner_rounding_perturbation",
 ]
+
+
+def __getattr__(name):
+    if name in (
+        "AdaptiveRobustOptimizer",
+        "FabricableSubspaceProjection",
+        "axial_samples",
+        "correlated_perturbation",
+    ):
+        from diffnano.design.robustness import adaptive
+        return getattr(adaptive, name)
+    if name in (
+        "MultiAxisPerturbation",
+        "sidewall_angle_perturbation",
+        "thickness_perturbation",
+        "corner_rounding_perturbation",
+    ):
+        from diffnano.design.robustness import subspace
+        return getattr(subspace, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

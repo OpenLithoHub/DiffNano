@@ -1,0 +1,15 @@
+{
+  "n_steps": 100,
+  "nominal": {
+    "final_loss": 1.805347139065417,
+    "converged_at": 100
+  },
+  "c5_brute_force_mc": {
+    "final_loss": 19.814351642877117,
+    "converged_at": 100
+  },
+  "c7_adaptive": {
+    "final_loss": 2.1956828237048684,
+    "converged_at": 100
+  }
+}
