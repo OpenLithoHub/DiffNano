@@ -159,41 +159,43 @@ def _band_structure_pwe(
         for j in range(N_G):
             dn1 = n_indices[i][0] - n_indices[j][0]
             dn2 = n_indices[i][1] - n_indices[j][1]
-            # Map to FFT index (with wrapping)
-            fft_idx_h = dn1 % H
-            fft_idx_w = dn2 % W
+            # Map to FFT index using fftshift convention
+            # FFT output has positive frequencies first, then negative
+            fft_idx_h = (dn1 + H // 2) % H
+            fft_idx_w = (dn2 + W // 2) % W
             eta[i, j] = field_fft[fft_idx_h, fft_idx_w]
 
     # Compute bands at each k-point
     all_bands = []
-    n_bands = min(6, N_G)  # compute first few bands
+    n_bands = min(6, N_G)
 
     for ki in range(k_points.shape[0]):
         k = k_points[ki]
 
-        # k + G vectors
         kG = k.unsqueeze(0) + G_points  # (N_G, 2)
         kG_sq = (kG ** 2).sum(dim=-1)  # (N_G,)
 
         if polarization == "TM":
-            # TM: eigenvalue problem
-            # Sum_G' |k+G|^2 * eta(G-G') * E_G' = (omega/c)^2 * E_G
-            # Matrix: M[i,j] = |k+G_i|^2 * eta[i,j]  (only diagonal for simple case)
-            # Full matrix: diag(|k+G|^2) @ eta
+            # TM: M_{GG'} = |k+G|^2 * eta(G-G')
             kG_sq_diag = torch.diag(kG_sq)
             M = kG_sq_diag.to(torch.complex128) @ eta
         else:
-            # TE: different eigenvalue formulation
-            # eta(G-G') * (k+G) * (k+G') for full vector case
-            # Simplified: use same structure as TM with eps instead of 1/eps
-            kG_sq_diag = torch.diag(kG_sq)
-            M = kG_sq_diag.to(torch.complex128) @ eta
+            # TE: M_{GG'} = (k+G)_x * eta(G-G') * (k+G')_x
+            #              + (k+G)_y * eta(G-G') * (k+G')_y
+            # Full vector coupling for TE polarization
+            kGx = kG[:, 0]  # (N_G,)
+            kGy = kG[:, 1]
+            kGx_c = kGx.to(torch.complex128)
+            kGy_c = kGy.to(torch.complex128)
+            M_x = kGx_c.unsqueeze(1) * eta * kGx_c.unsqueeze(0)
+            M_y = kGy_c.unsqueeze(1) * eta * kGy_c.unsqueeze(0)
+            M = M_x + M_y
 
-        # Solve eigenvalue problem
-        eigenvalues = torch.linalg.eigvalsh(M.real)
-        # Take first n_bands
+        # Make M Hermitian for stable real eigenvalues
+        M_herm = (M + M.conj().mT) / 2.0
+
+        eigenvalues = torch.linalg.eigvalsh(M_herm.real)
         bands_k = eigenvalues[:n_bands]
-        # omega^2 = eigenvalue, so omega = sqrt(eigenvalue)
         freq = torch.sqrt(torch.clamp(bands_k, min=0.0))
         all_bands.append(freq)
 

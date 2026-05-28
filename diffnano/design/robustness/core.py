@@ -60,7 +60,10 @@ def reparameterize_sample(
     deltas : Tensor, shape ``(n_samples, *mu.shape)``
         Perturbation samples.
     """
-    eps = torch.randn(n_samples, *mu.shape, device=mu.device, dtype=mu.dtype)
+    device = mu.device
+    dtype = mu.dtype
+    sigma = sigma.to(device=device, dtype=dtype)
+    eps = torch.randn(n_samples, *mu.shape, device=device, dtype=dtype)
     return mu + sigma * eps
 
 

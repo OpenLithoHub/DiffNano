@@ -128,7 +128,7 @@ class TestFDFDSolver2D:
     def test_gradient_flows(self, solver):
         eps = torch.full((12, 12), 2.25, dtype=torch.float64, requires_grad=True)
         result = solver.forward(eps)
-        loss = result.field.sum()
+        loss = result.field.abs().sum()
         loss.backward()
         assert eps.grad is not None
         assert eps.grad.shape == (12, 12)

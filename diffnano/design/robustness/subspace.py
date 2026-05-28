@@ -1,8 +1,8 @@
 """Fabricable subspace projection and multi-axis perturbation kernels.
 
 Extends the v0.1 C5 robustness module with:
-- Correlated multi-axis perturbation (linewidth × sidewall × thickness)
-- Sidewall angle drift perturbation
+- Correlated multi-axis perturbation (linewidth x sidewall x thickness)
+- Sidewall angle drift perturbation (differentiable via spatial transformer)
 - Layer thickness variation perturbation
 - Corner rounding perturbation kernel
 - Joint Gaussian model with Cholesky decomposition
@@ -14,7 +14,10 @@ References
 
 from __future__ import annotations
 
+import math
+
 import torch
+import torch.nn.functional as F
 
 __all__ = [
     "MultiAxisPerturbation",
@@ -24,52 +27,72 @@ __all__ = [
 ]
 
 
+def _differentiable_shift_1d(
+    signal: torch.Tensor,
+    shifts: torch.Tensor,
+) -> torch.Tensor:
+    """Shift each row of a 2D signal by a differentiable amount.
+
+    Uses linear interpolation via F.grid_sample for differentiable shifting.
+
+    Parameters
+    ----------
+    signal : Tensor, shape ``(H, W)``
+    shifts : Tensor, shape ``(H,)``
+        Per-row shift in pixels (positive = shift right).
+
+    Returns
+    -------
+    shifted : Tensor, shape ``(H, W)``
+    """
+    H, W = signal.shape
+    device = signal.device
+    dtype = signal.dtype
+
+    x_base = torch.linspace(-1, 1, W, device=device, dtype=dtype)
+    y_base = torch.linspace(-1, 1, H, device=device, dtype=dtype)
+    grid_y, grid_x = torch.meshgrid(y_base, x_base, indexing="ij")
+
+    shift_normalized = shifts.unsqueeze(1) / (W / 2.0)
+    grid_x_shifted = grid_x - shift_normalized
+
+    grid = torch.stack([grid_x_shifted, grid_y], dim=-1).unsqueeze(0)
+    input_4d = signal.unsqueeze(0).unsqueeze(0)
+    output = F.grid_sample(
+        input_4d, grid,
+        mode="bilinear", padding_mode="border", align_corners=True,
+    )
+    return output.squeeze(0).squeeze(0)
+
+
 def sidewall_angle_perturbation(
     density: torch.Tensor,
     angle_delta_deg: torch.Tensor,
     pixel_size_nm: float = 5.0,
 ) -> torch.Tensor:
-    """Apply sidewall angle drift perturbation.
+    """Apply sidewall angle drift perturbation (fully differentiable).
 
-    Simulates the effect of sidewall angle variation on a density field
-    by shifting the density profile vertically, approximating a trapezoidal
-    cross-section from an angled sidewall.
+    Uses spatial transformer with linear interpolation for gradient flow.
 
     Parameters
     ----------
     density : Tensor, shape ``(H, W)``
-        Density field.
     angle_delta_deg : Tensor, scalar
         Sidewall angle deviation in degrees.
     pixel_size_nm : float
-        Pixel size in nm.
 
     Returns
     -------
     perturbed : Tensor, shape ``(H, W)``
     """
-    # Convert angle to a vertical shift per horizontal pixel
-    tan_angle = torch.tan(angle_delta_deg * 3.14159265 / 180.0)
+    tan_angle = torch.tan(angle_delta_deg * math.pi / 180.0)
 
     H, W = density.shape
-    # Create a gradient that shifts density based on height
     y_coords = torch.linspace(0, 1, H, device=density.device, dtype=density.dtype)
-    shift = tan_angle * y_coords.unsqueeze(1) * W * pixel_size_nm / (2 * pixel_size_nm)
+    shift = tan_angle * y_coords * W * pixel_size_nm / (2 * pixel_size_nm)
+    shift_pixels = shift / pixel_size_nm
 
-    # Apply as a horizontal shift varying with height
-    perturbed = density.clone()
-    shift_pixels = (shift / pixel_size_nm).round().long().clamp(-W // 2, W // 2)
-
-    for i in range(H):
-        s = shift_pixels[i].item()
-        if s > 0:
-            perturbed[i, s:] = density[i, :-s]
-            perturbed[i, :s] = density[i, 0]
-        elif s < 0:
-            perturbed[i, :s] = density[i, -s:]
-            perturbed[i, s:] = density[i, -1]
-
-    return perturbed
+    return _differentiable_shift_1d(density, shift_pixels)
 
 
 def thickness_perturbation(
@@ -79,23 +102,19 @@ def thickness_perturbation(
 ) -> torch.Tensor:
     """Apply layer thickness variation perturbation.
 
-    Scales the density field to simulate thickness variation by adjusting
-    the effective fill factor uniformly.
-
     Parameters
     ----------
     density : Tensor, shape ``(H, W)``
     delta_nm : Tensor, scalar
-        Thickness perturbation in nm.
     pixel_size_nm : float
 
     Returns
     -------
     perturbed : Tensor, shape ``(H, W)``
     """
-    scale = 1.0 + delta_nm / (density.shape[0] * pixel_size_nm)
-    perturbed = density * scale
-    return perturbed.clamp(0.0, 1.0)
+    physical_thickness_nm = density.shape[0] * pixel_size_nm
+    scale = 1.0 + delta_nm / physical_thickness_nm
+    return (density * scale).clamp(0.0, 1.0)
 
 
 def corner_rounding_perturbation(
@@ -105,14 +124,12 @@ def corner_rounding_perturbation(
 ) -> torch.Tensor:
     """Apply corner rounding perturbation via Gaussian smoothing.
 
-    Simulates the effect of fabrication corner rounding by applying
-    a Gaussian blur with radius proportional to the rounding amount.
+    Fully differentiable — uses fixed kernel size with sigma-controlled blur.
 
     Parameters
     ----------
     density : Tensor, shape ``(H, W)``
     radius_nm : Tensor, scalar
-        Corner rounding radius in nm.
     pixel_size_nm : float
 
     Returns
@@ -125,26 +142,30 @@ def corner_rounding_perturbation(
     if sigma < 0.5:
         return density
 
-    # Create 1D Gaussian kernel
-    k_size = int(6 * sigma.item()) + 1
-    if k_size % 2 == 0:
-        k_size += 1
-    x = torch.arange(k_size, device=density.device, dtype=density.dtype) - k_size // 2
-    kernel_1d = torch.exp(-x ** 2 / (2 * sigma ** 2))
-    kernel_1d = kernel_1d / kernel_1d.sum()
+    k_size = 21
+    k_half = k_size // 2
 
-    # Separable 2D convolution
-    padded = torch.nn.functional.pad(
+    # Clamp kernel size to input dimensions
+    H, W = density.shape
+    k_size = min(k_size, min(H, W))
+    if k_size % 2 == 0:
+        k_size -= 1
+    if k_size < 3:
+        return density
+    k_half = k_size // 2
+    x = torch.arange(k_size, device=density.device, dtype=density.dtype) - k_half
+    kernel_1d = torch.exp(-x ** 2 / (2 * sigma ** 2))
+    kernel_1d = kernel_1d / (kernel_1d.sum() + 1e-12)
+
+    padded = F.pad(
         density.unsqueeze(0).unsqueeze(0),
-        [k_size // 2] * 4,
+        [k_half] * 4,
         mode="reflect",
     )
-    # Horizontal pass
     h_kernel = kernel_1d.reshape(1, 1, 1, -1)
-    h_blurred = torch.nn.functional.conv2d(padded, h_kernel, padding=0)
-    # Vertical pass
+    h_blurred = F.conv2d(padded, h_kernel, padding=0)
     v_kernel = kernel_1d.reshape(1, 1, -1, 1)
-    result = torch.nn.functional.conv2d(h_blurred, v_kernel, padding=0)
+    result = F.conv2d(h_blurred, v_kernel, padding=0)
 
     return result.squeeze(0).squeeze(0)
 
@@ -202,7 +223,7 @@ class MultiAxisPerturbation:
             Columns: [linewidth_nm, sidewall_deg, thickness_nm, corner_nm]
         """
         eps = torch.randn(n_samples, 4, device=device, dtype=torch.float64)
-        return eps @ self.cov_chol.T
+        return eps @ self.cov_chol.mT
 
     def apply(
         self,

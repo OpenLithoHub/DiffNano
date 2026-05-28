@@ -72,7 +72,15 @@ def smooth_filter(
     pad = k_size // 2
     smoothed = F.conv2d(density, kernel, padding=pad)
 
-    return smoothed.squeeze()
+    # Remove only the dimensions we added (0 and 1 for 2D input, 0 for 3D)
+    if smoothed.dim() == 4 and smoothed.shape[0] == 1 and smoothed.shape[1] == 1:
+        smoothed = smoothed.squeeze(0).squeeze(0)
+    elif smoothed.dim() == 4 and smoothed.shape[0] == 1:
+        smoothed = smoothed.squeeze(0)
+    else:
+        smoothed = smoothed.squeeze(0) if smoothed.shape[0] == 1 else smoothed
+
+    return smoothed
 
 
 def beta_continuation_schedule(

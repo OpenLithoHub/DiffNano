@@ -91,7 +91,7 @@ def _build_helmholtz_tm(
         # Absorbing factor: integrate sigma profile
         # For FDFD: modify the Laplacian with complex stretching
         s_complex = s.to(dtype)
-        absorber = -1j * omega * s_complex + s_complex ** 2 / (omega + 1e-30)
+        absorber = -1j * omega * s_complex + s_complex ** 2 / (abs(omega) + 1e-12)
     else:
         absorber = 0.0
 
@@ -302,8 +302,8 @@ class FDFDSolver2D:
         b_2d = b.unsqueeze(1)  # (N, 1)
         x = torch.linalg.solve(A, b_2d).squeeze(1)  # (N,)
 
-        # Field reshaped to (1, H*W) for consistency
-        field = x.real.unsqueeze(0)
+        # Field reshaped to (1, H*W) for consistency — keep complex for phase
+        field = x.unsqueeze(0)
 
         return SimResult(
             field=field,

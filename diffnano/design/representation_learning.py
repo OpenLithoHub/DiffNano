@@ -225,6 +225,12 @@ class LearnedRepresentation:
         density : Tensor, shape ``(H, W)``
         loss_history : list of float
         """
+        # Freeze decoder parameters during latent optimization
+        decoder_params_frozen = []
+        for p in self.decoder.parameters():
+            decoder_params_frozen.append(p.requires_grad)
+            p.requires_grad_(False)
+
         z = torch.zeros(
             self.latent_dim, dtype=torch.float64,
             device=self._device, requires_grad=True,
@@ -253,4 +259,9 @@ class LearnedRepresentation:
 
         with torch.no_grad():
             final = self.decoder(z.unsqueeze(0)).squeeze(0).squeeze(0)
+
+        # Restore decoder requires_grad
+        for p, frozen in zip(self.decoder.parameters(), decoder_params_frozen):
+            p.requires_grad_(frozen)
+
         return final.detach(), loss_history

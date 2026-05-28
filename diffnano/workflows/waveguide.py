@@ -169,7 +169,7 @@ class WaveguideDesigner:
         eps_r[y_start:y_end, :] = eps_core
 
         if geometry is not None:
-            # Blend geometry into the design region
+            # Use geometry as density for the entire grid
             eps_r = eps_clad + (eps_core - eps_clad) * geometry
 
         return eps_r
@@ -195,8 +195,8 @@ class WaveguideDesigner:
         if eps_r is None:
             eps_r = self.waveguide_eps()
 
-        # Average along propagation direction (x) to get 1D cross-section
-        eps_1d = eps_r.mean(dim=1)  # (W,)
+        # Average along propagation direction (dim=1, x-axis) to get 1D cross-section
+        eps_1d = eps_r.mean(dim=1)  # (W,) — cross-section perpendicular to propagation
 
         n_effs, modes_1d = _waveguide_mode_1d(
             eps_1d, self.wavelength_nm, dl=self.dl, n_modes=1,
@@ -329,13 +329,19 @@ class WaveguideDesigner:
             ) * projected
 
             if self.solver is not None:
-                # Use external solver
                 result = self.solver.forward(
-                    eps_r.unsqueeze(0),
+                    eps_r,
                     wavelengths=[self.wavelength_nm],
-                    source={"type": "line", "row": 5, "amplitude": 1.0},
+                    source={"type": "gaussian_pulse", "amplitude": 1.0},
                 )
-                output_field = result.field.reshape(H, W)
+                # Handle different field shapes from different solver types
+                field = result.field
+                if field.dim() == 3:
+                    output_field = field[0]  # (H, W)
+                elif field.dim() == 2:
+                    output_field = field
+                else:
+                    output_field = field.reshape(H, W)
             else:
                 # Analytical estimate: mode overlap between input and
                 # the perturbed waveguide mode at the output

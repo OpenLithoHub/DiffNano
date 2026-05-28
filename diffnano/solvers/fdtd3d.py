@@ -142,6 +142,16 @@ class FDTDSolver3D:
     def device(self) -> torch.device:
         return self._device
 
+    def _cpml_damping(self) -> tuple[torch.Tensor, ...]:
+        """Extract CPML damping coefficients for x, y, z boundaries."""
+        b_x = self._cpml_x.b.to(self._device).to(torch.float64)
+        c_x = self._cpml_x.c.to(self._device).to(torch.float64)
+        b_y = self._cpml_y.b.to(self._device).to(torch.float64)
+        c_y = self._cpml_y.c.to(self._device).to(torch.float64)
+        b_z = self._cpml_z.b.to(self._device).to(torch.float64)
+        c_z = self._cpml_z.c.to(self._device).to(torch.float64)
+        return b_x, c_x, b_y, c_y, b_z, c_z
+
     def _source_waveform(self, step: int, source: dict) -> torch.Tensor:
         src_type = source.get("type", "gaussian_pulse")
         t = step * self.dt
@@ -172,9 +182,35 @@ class FDTDSolver3D:
     ) -> torch.Tensor:
         D, H, W = self.grid_shape
         waveform = self._source_waveform(step, source)
+
+        needs_clone = False
+        pos = source.get("pos", None)
+        if pos is not None:
+            z, y, x = pos
+            if 0 <= z < D and 0 <= y < H and 0 <= x < W:
+                needs_clone = True
+        else:
+            plane = source.get("plane", None)
+            if plane == "xy":
+                z = source.get("z", D // 2)
+                if 0 <= z < D:
+                    needs_clone = True
+            elif plane == "xz":
+                y = source.get("y", H // 2)
+                if 0 <= y < H:
+                    needs_clone = True
+            elif plane == "yz":
+                x = source.get("x", W // 2)
+                if 0 <= x < W:
+                    needs_clone = True
+            else:
+                needs_clone = True
+
+        if not needs_clone:
+            return field
+
         field = field.clone()
 
-        pos = source.get("pos", None)
         if pos is not None:
             z, y, x = pos
             if 0 <= z < D and 0 <= y < H and 0 <= x < W:
@@ -194,7 +230,6 @@ class FDTDSolver3D:
                 if 0 <= x < W:
                     field[:, :, x] = field[:, :, x] + waveform
             else:
-                # Default: line source along z at center
                 z = D // 2
                 y = H // 2
                 field[z, y, :] = field[z, y, :] + waveform
@@ -215,61 +250,76 @@ class FDTDSolver3D:
         source: dict,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor,
                torch.Tensor, torch.Tensor, torch.Tensor]:
-        """One 3D FDTD time step (all six field components).
-
-        Update equations (Yee grid, normalized c=1):
-            H fields updated first (half-step), then E fields (full step).
-        """
+        """One 3D FDTD time step (all six field components) with CPML."""
         dt = self.dt
         dx = self.dl
         dy = self.dl
         dz = self.dl
 
-        # --- Update H fields ---
-        # Hx -= dt/mu * (dEz/dy - dEy/dz)
+        b_x, c_x, b_y, c_y, b_z, c_z = self._cpml_damping()
+
+        # --- Update H fields with CPML ---
         dEz_dy = torch.zeros_like(Ez)
         dEz_dy[:, :-1, :] = (Ez[:, 1:, :] - Ez[:, :-1, :]) / dy
         dEy_dz = torch.zeros_like(Ey)
         dEy_dz[:-1, :, :] = (Ey[1:, :, :] - Ey[:-1, :, :]) / dz
-        Hx = Hx - (dt / mu_r) * (dEz_dy - dEy_dz)
+        Hx = b_y.unsqueeze(0).unsqueeze(-1) * Hx - (dt / mu_r) * (
+            c_y.unsqueeze(0).unsqueeze(-1) * dEz_dy + dEz_dy
+            - c_z.unsqueeze(0).unsqueeze(0) * dEy_dz - dEy_dz
+        )
 
-        # Hy -= dt/mu * (dEx/dz - dEz/dx)
         dEx_dz = torch.zeros_like(Ex)
         dEx_dz[:-1, :, :] = (Ex[1:, :, :] - Ex[:-1, :, :]) / dz
         dEz_dx = torch.zeros_like(Ez)
         dEz_dx[:, :, :-1] = (Ez[:, :, 1:] - Ez[:, :, :-1]) / dx
-        Hy = Hy - (dt / mu_r) * (dEx_dz - dEz_dx)
+        Hy = b_z.unsqueeze(0).unsqueeze(0) * Hy - (dt / mu_r) * (
+            c_z.unsqueeze(0).unsqueeze(0) * dEx_dz + dEx_dz
+            - c_x.unsqueeze(0).unsqueeze(-1) * dEz_dx - dEz_dx
+        )
 
-        # Hz -= dt/mu * (dEy/dx - dEx/dy)
         dEy_dx = torch.zeros_like(Ey)
         dEy_dx[:, :, :-1] = (Ey[:, :, 1:] - Ey[:, :, :-1]) / dx
         dEx_dy = torch.zeros_like(Ex)
         dEx_dy[:, :-1, :] = (Ex[:, 1:, :] - Ex[:, :-1, :]) / dy
-        Hz = Hz - (dt / mu_r) * (dEy_dx - dEx_dy)
+        Hz = b_x.unsqueeze(0).unsqueeze(0) * Hz - (dt / mu_r) * (
+            c_x.unsqueeze(0).unsqueeze(0) * dEy_dx + dEy_dx
+            - c_y.unsqueeze(0).unsqueeze(-1) * dEx_dy - dEx_dy
+        )
 
-        # --- Update E fields ---
-        # Ex += dt/eps * (dHz/dy - dHy/dz)
+        # --- Update E fields with CPML ---
         dHz_dy = torch.zeros_like(Hz)
         dHz_dy[:, 1:, :] = (Hz[:, 1:, :] - Hz[:, :-1, :]) / dy
         dHy_dz = torch.zeros_like(Hy)
         dHy_dz[1:, :, :] = (Hy[1:, :, :] - Hy[:-1, :, :]) / dz
-        Ex = Ex + (dt / eps_r) * (dHz_dy - dHy_dz)
+        Ex = b_y.unsqueeze(0).unsqueeze(-1) * b_z.unsqueeze(0).unsqueeze(0) * Ex + (
+            dt / eps_r
+        ) * (
+            c_y.unsqueeze(0).unsqueeze(-1) * dHz_dy + dHz_dy
+            - c_z.unsqueeze(0).unsqueeze(0) * dHy_dz - dHy_dz
+        )
 
-        # Ey += dt/eps * (dHx/dz - dHz/dx)
         dHx_dz = torch.zeros_like(Hx)
         dHx_dz[1:, :, :] = (Hx[1:, :, :] - Hx[:-1, :, :]) / dz
         dHz_dx = torch.zeros_like(Hz)
         dHz_dx[:, :, 1:] = (Hz[:, :, 1:] - Hz[:, :, :-1]) / dx
-        Ey = Ey + (dt / eps_r) * (dHx_dz - dHz_dx)
+        Ey = b_z.unsqueeze(0).unsqueeze(0) * b_x.unsqueeze(0).unsqueeze(-1) * Ey + (
+            dt / eps_r
+        ) * (
+            c_z.unsqueeze(0).unsqueeze(0) * dHx_dz + dHx_dz
+            - c_x.unsqueeze(0).unsqueeze(-1) * dHz_dx - dHz_dx
+        )
 
-        # Ez += dt/eps * (dHy/dx - dHx/dy)
         dHy_dx = torch.zeros_like(Hy)
         dHy_dx[:, :, 1:] = (Hy[:, :, 1:] - Hy[:, :, :-1]) / dx
         dHx_dy = torch.zeros_like(Hx)
         dHx_dy[:, 1:, :] = (Hx[:, 1:, :] - Hx[:, :-1, :]) / dy
-        Ez = Ez + (dt / eps_r) * (dHy_dx - dHx_dy)
+        Ez = b_x.unsqueeze(0).unsqueeze(0) * b_y.unsqueeze(0).unsqueeze(-1) * Ez + (
+            dt / eps_r
+        ) * (
+            c_x.unsqueeze(0).unsqueeze(0) * dHy_dx + dHy_dx
+            - c_y.unsqueeze(0).unsqueeze(-1) * dHx_dy - dHx_dy
+        )
 
-        # Inject source into Ez (default)
         Ez = self._inject_source(Ez, step, source, "Ez")
 
         return Ex, Ey, Ez, Hx, Hy, Hz

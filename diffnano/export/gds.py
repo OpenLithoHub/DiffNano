@@ -50,26 +50,23 @@ def export_density_to_gds(
     arr = density.detach().cpu().numpy()
     binary = (arr > threshold).astype(np.uint8)
 
-    # Create polygons from binary image using gdstk's built-in
     H, W = binary.shape
-    polygons = []
 
-    for i in range(H):
-        for j in range(W):
-            if binary[i, j]:
-                x = j * pixel_size_nm
-                y = (H - 1 - i) * pixel_size_nm
-                rect = gdstk.rectangle(
-                    (x, y),
-                    (x + pixel_size_nm, y + pixel_size_nm),
-                    layer=layer,
-                    datatype=datatype,
-                )
-                polygons.append(rect)
+    # Use gdstk's bitmap_to_polygon for efficient contour tracing
+    polygons = gdstk.bitmap_to_polygon(
+        binary,
+        dx=pixel_size_nm,
+        dy=pixel_size_nm,
+        offset=(0, 0),
+        scale=1.0,
+        layer=layer,
+        datatype=datatype,
+    )
 
     lib = gdstk.Library("DiffNano")
     cell = lib.new_cell("DESIGN")
-    cell.add(*polygons)
+    if polygons:
+        cell.add(*polygons)
     lib.write_gds(path)
 
 

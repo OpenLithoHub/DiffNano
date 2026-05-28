@@ -88,7 +88,7 @@ class DifferentiableResistModel:
         Uses separable 1D Gaussian convolution.
         """
         sigma_px = sigma_nm / self.dl
-        if sigma_px < 0.5:
+        if sigma_px.item() < 0.5:
             return field
 
         k_size = int(6 * sigma_px.item()) + 1

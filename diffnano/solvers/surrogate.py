@@ -64,7 +64,7 @@ class _SurrogateNet(nn.Module):
         features = self.encoder(x)
         features = features.reshape(features.shape[0], -1)
         out = self.fc(features)
-        return torch.softmax(out, dim=-1)
+        return torch.clamp(out, min=0.0)  # Non-negative regression, not classification
 
 
 class NeuralSurrogate:
@@ -165,9 +165,10 @@ class NeuralSurrogate:
 
         loss_history = []
         for epoch in range(n_epochs):
-            # Mini-batch training
             perm = torch.randperm(n_samples)
             batch_size = min(32, n_samples)
+            epoch_loss = 0.0
+            n_batches = 0
 
             for start in range(0, n_samples, batch_size):
                 idx = perm[start:start + batch_size]
@@ -180,8 +181,10 @@ class NeuralSurrogate:
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
+                epoch_loss += loss.item()
+                n_batches += 1
 
-            loss_history.append(loss.item())
+            loss_history.append(epoch_loss / max(1, n_batches))
 
             if verbose and epoch % 10 == 0:
                 print(f"Epoch {epoch}: loss={loss.item():.6f}")

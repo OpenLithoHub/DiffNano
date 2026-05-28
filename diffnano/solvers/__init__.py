@@ -16,6 +16,7 @@ from diffnano.solvers._result import SimResult
 __all__ = [
     "Solver", "SimResult", "RCWASolver", "FDFDSolver2D",
     "FDTDSolver2D", "FDTDSolver3D", "NeuralSurrogate",
+    "HopkinsLithoModel", "LearnedFabModel", "DifferentiableResistModel",
 ]
 
 
@@ -74,4 +75,13 @@ def __getattr__(name):
     if name == "NeuralSurrogate":
         from diffnano.solvers.surrogate import NeuralSurrogate
         return NeuralSurrogate
+    if name == "HopkinsLithoModel":
+        from diffnano.solvers.litho import HopkinsLithoModel
+        return HopkinsLithoModel
+    if name == "LearnedFabModel":
+        from diffnano.solvers.fab_model import LearnedFabModel
+        return LearnedFabModel
+    if name == "DifferentiableResistModel":
+        from diffnano.solvers.resist import DifferentiableResistModel
+        return DifferentiableResistModel
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

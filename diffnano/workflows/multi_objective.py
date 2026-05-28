@@ -59,7 +59,7 @@ class MultiObjectiveExplorer:
         weights_list = []
 
         for _ in range(n_points):
-            w = torch._sample_dirichlet(alpha).tolist()
+            w = torch.distributions.Dirichlet(alpha).sample().tolist()
             weights = {name: w[i] for i, name in enumerate(self.obj_names)}
             weights_list.append(weights)
 

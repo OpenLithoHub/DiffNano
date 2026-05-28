@@ -152,9 +152,9 @@ class HopkinsLithoModel:
 
             image = image + conv ** 2
 
-        # Normalize
-        if image.max() > 0:
-            image = image / image.max()
+        # Normalize (avoid GPU sync — use tensor operations)
+        img_max = image.max()
+        image = image / (img_max + 1e-12)
 
         return image
 
@@ -193,3 +193,23 @@ class HopkinsLithoModel:
             "printed_contour": printed,
             "epe": epe,
         }
+
+    def forward_solver(
+        self,
+        geometry: torch.Tensor,
+        wavelengths=None,
+        *,
+        source=None,
+    ):
+        """Solver-protocol compatible forward pass."""
+        from diffnano.solvers._result import SimResult
+
+        result = self.forward(geometry)
+        return SimResult(
+            field=result["printed_contour"].unsqueeze(0),
+            wavelengths=torch.tensor([0.0]),
+            metadata={
+                "model": "hopkins_litho",
+                "epe": result["epe"],
+            },
+        )

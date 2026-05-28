@@ -40,18 +40,17 @@ def _build_toeplitz_1d(
     """
     N = eps_profile.shape[0]
 
-    # FFT of the permittivity profile
     eps_fft = torch.fft.fft(eps_profile.to(torch.complex128)) / N
 
-    # Extract n_fourier Fourier coefficients centered at 0
     half = n_fourier // 2
     indices = torch.arange(-half, half + 1, device=eps_profile.device) % N
-    coeffs = eps_fft[indices]  # (n_fourier,)
+    coeffs = eps_fft[indices]
 
-    # Build circulant/Toeplitz matrix
+    # Build Toeplitz (not circulant) matrix using FFT coefficient indexing
     row_idx = torch.arange(n_fourier, device=eps_profile.device)
     col_idx = torch.arange(n_fourier, device=eps_profile.device)
-    diff = (col_idx.unsqueeze(0) - row_idx.unsqueeze(1)) % n_fourier
+    diff = col_idx.unsqueeze(0) - row_idx.unsqueeze(1) + half
+    diff = diff.clamp(0, n_fourier - 1)
     eps_conv = coeffs[diff]
 
     return eps_conv
@@ -68,13 +67,12 @@ def _propagate_layer(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute forward/backward propagation matrices for one layer.
 
-    Returns (F, F_inv) — the propagation phase matrices.
+    Returns (phase, eigenvectors).
     """
     n = eps_conv.shape[0]
     device = eps_conv.device
     dtype = torch.complex128
 
-    # Build K-matrices (normalized wavevectors)
     m = torch.arange(n, device=device, dtype=torch.float64) - n // 2
     Kx = torch.diag(kx_norm + m * (2 * math.pi / period_x) / k0)
     Ky = torch.diag(ky_norm + m * (2 * math.pi / period_y) / k0)
@@ -82,16 +80,20 @@ def _propagate_layer(
     Kx = Kx.to(dtype)
     Ky = Ky.to(dtype)
 
-    # Eigenvalue problem for propagation constants
     # P = eps_conv - Kx^2 (1D simplification)
     P = eps_conv - Kx @ Kx
 
-    eigenvalues, eigenvectors = torch.linalg.eigh(P)
+    # Make P Hermitian for stable eigendecomposition
+    P_herm = (P + P.conj().mT) / 2.0
 
-    # Ensure positive propagation (clamp small/negative values)
-    gamma = torch.sqrt(torch.clamp(eigenvalues, min=1e-12))
+    eigenvalues, eigenvectors = torch.linalg.eigh(P_herm)
 
-    # Phase accumulation
+    # Handle evanescent modes: negative eigenvalues → imaginary gamma
+    # Use complex sqrt with small damping for numerical stability
+    damping = 1e-10
+    gamma = torch.sqrt(eigenvalues.to(dtype) + damping)
+
+    # Phase accumulation (imaginary for evanescent → exponential decay)
     phase = torch.exp(1j * k0 * thickness_nm * gamma)
 
     return phase, eigenvectors
@@ -159,7 +161,8 @@ class RCWASolver:
         wavelengths : sequence or Tensor, optional
             Wavelengths in nm.
         source : dict, optional
-            Source config: ``{"theta": float, "phi": float, "polarization": "TE"|"TM"}``.
+            Source config: ``{"theta": float, "polarization": "TE"|"TM",
+            "thickness_nm": float}``.
 
         Returns
         -------
@@ -175,11 +178,12 @@ class RCWASolver:
         src = source or {}
         theta = src.get("theta", 0.0)
         polarization = src.get("polarization", "TE")
+        thickness_nm = src.get("thickness_nm", None)
 
         if geometry.dim() == 2:
-            return self._forward_1d(geometry, wavelengths, theta, polarization)
+            return self._forward_1d(geometry, wavelengths, theta, polarization, thickness_nm)
         elif geometry.dim() == 3:
-            return self._forward_2d(geometry, wavelengths, theta, polarization)
+            return self._forward_2d(geometry, wavelengths, theta, polarization, thickness_nm)
         else:
             raise ValueError(f"geometry must be 2D or 3D tensor, got {geometry.dim()}D")
 
@@ -189,6 +193,7 @@ class RCWASolver:
         wavelengths: torch.Tensor,
         theta: float,
         polarization: str,
+        thickness_nm: float | None = None,
     ) -> SimResult:
         """Forward pass for 1D grating (n_layers, n_grid)."""
         n_layers = eps_layers.shape[0]
@@ -197,35 +202,33 @@ class RCWASolver:
         device = self.device
         px, py = self.period_nm
 
-        kx0 = 0.0  # normal incidence
-
         all_efficiencies = []
 
         for wi in range(n_wl):
             wl = wavelengths[wi]
             k0 = 2 * math.pi / wl
+            kx0 = k0 * math.sin(math.radians(theta))
 
-            # Accumulate transmission through layers using transfer matrices
             total_field = torch.ones(n, dtype=torch.complex128, device=device)
 
             for li in range(n_layers):
                 eps_profile = eps_layers[li]
                 eps_conv = _build_toeplitz_1d(eps_profile, n)
-                thickness = px / n_layers
+
+                layer_thickness = thickness_nm if thickness_nm is not None else px / n_layers
 
                 phase, evecs = _propagate_layer(
                     eps_conv,
                     torch.tensor([kx0], device=device, dtype=torch.float64),
                     torch.zeros(1, device=device, dtype=torch.float64),
                     k0,
-                    thickness,
+                    layer_thickness,
                     px,
                     py,
                 )
 
-                # Propagate field through layer
-                P_inv = torch.linalg.inv(evecs)
-                coeffs = P_inv @ total_field.to(torch.complex128)
+                # Use solve instead of inv for numerical stability
+                coeffs = torch.linalg.solve(evecs, total_field.to(torch.complex128))
                 coeffs = coeffs * phase
                 total_field = evecs @ coeffs
 
@@ -257,12 +260,13 @@ class RCWASolver:
         wavelengths: torch.Tensor,
         theta: float,
         polarization: str,
+        thickness_nm: float | None = None,
     ) -> SimResult:
         """Forward pass for 2D geometry (n_layers, H, W)."""
-        eps_low = 1.0
+        eps_low = self.eps_ambient
         eps_high = self.eps_substrate if self.eps_substrate > 1.0 else 12.0
         eps_layers = eps_low + (eps_high - eps_low) * density.mean(dim=-1)
-        return self._forward_1d(eps_layers, wavelengths, theta, polarization)
+        return self._forward_1d(eps_layers, wavelengths, theta, polarization, thickness_nm)
 
     def diffraction_efficiency(
         self,

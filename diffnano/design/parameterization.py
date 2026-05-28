@@ -29,6 +29,9 @@ def signed_distance_field(
 ) -> torch.Tensor:
     """Compute differentiable signed distance field from closed contour(s).
 
+    Uses soft-min for differentiable distance aggregation and a differentiable
+    winding number for inside/outside classification.
+
     Parameters
     ----------
     grid_x, grid_y : Tensor, shape ``(H, W)``
@@ -42,77 +45,77 @@ def signed_distance_field(
         Negative inside the contour, positive outside.
     """
     n_contours = contours.shape[0]
-    sdf = torch.full_like(grid_x, float("inf"))
+    all_dists = []
 
     for ci in range(n_contours):
         pts = contours[ci]  # (N_pts, 2)
         n_pts = pts.shape[0]
-
-        # Close the contour
-        closed = torch.cat([pts, pts[:1]], dim=0)  # (N_pts+1, 2)
+        closed = torch.cat([pts, pts[:1]], dim=0)
 
         for pi in range(n_pts):
             a = closed[pi]
             b = closed[pi + 1]
 
-            # Vector from a to b
             ab = b - a
             ab_len_sq = (ab ** 2).sum() + 1e-12
 
-            # Parameter t of closest point on segment
             ap_x = grid_x - a[0]
             ap_y = grid_y - a[1]
 
             t = (ap_x * ab[0] + ap_y * ab[1]) / ab_len_sq
             t = torch.clamp(t, 0.0, 1.0)
 
-            # Closest point on segment
             closest_x = a[0] + t * ab[0]
             closest_y = a[1] + t * ab[1]
 
             dist = torch.sqrt((grid_x - closest_x) ** 2 + (grid_y - closest_y) ** 2 + 1e-12)
+            all_dists.append(dist)
 
-            sdf = torch.min(sdf, dist)
+    # Soft-min for differentiable aggregation (avoids zero-gradient dead zones)
+    dists = torch.stack(all_dists, dim=-1)  # (H, W, n_segments)
+    softmin_temp = 10.0
+    weights = torch.softmax(-softmin_temp * dists, dim=-1)
+    sdf = (weights * dists).sum(dim=-1)
 
-    # Determine sign using winding number (approximate: ray casting for center)
-    # For simplicity, use the convention that contours define the interior
-    # In practice, the sign is determined by whether the SDF is inside or outside
-    # For a closed contour, we use a simple point-in-polygon test
-    sign = _point_in_polygon(grid_x, grid_y, contours)
-    sdf = sdf * (1 - 2 * sign.float())
+    # Differentiable winding number for inside/outside
+    sign = _winding_number(grid_x, grid_y, contours)
+    sdf = sdf * (1 - 2 * sign)
 
     return sdf
 
 
-def _point_in_polygon(
+def _winding_number(
     grid_x: torch.Tensor,
     grid_y: torch.Tensor,
     contours: torch.Tensor,
 ) -> torch.Tensor:
-    """Ray-casting point-in-polygon test (differentiable approximation).
+    """Compute differentiable winding number via atan2.
 
-    Returns 1 for inside, 0 for outside.
+    Returns a value near 1 inside, 0 outside the contour.
     """
-    H, W = grid_x.shape
-    device = grid_x.device
-    inside = torch.zeros(H, W, dtype=torch.float64, device=device)
+    inside = torch.zeros_like(grid_x)
 
     for ci in range(contours.shape[0]):
         pts = contours[ci]
         n = pts.shape[0]
-        j = n - 1
+        closed = torch.cat([pts, pts[:1]], dim=0)
+
+        angles_sum = torch.zeros_like(grid_x)
         for i in range(n):
-            yi, xi = pts[i, 1], pts[i, 0]
-            yj, xj = pts[j, 1], pts[j, 0]
+            dx1 = grid_x - closed[i, 0]
+            dy1 = grid_y - closed[i, 1]
+            dx2 = grid_x - closed[i + 1, 0]
+            dy2 = grid_y - closed[i + 1, 1]
 
-            cond = ((yi > grid_y) != (yj > grid_y)) & (
-                grid_x < (xj - xi) * (grid_y - yi) / (yj - yi + 1e-12) + xi
-            )
-            inside = inside + cond.float()
-            j = i
+            cross = dx1 * dy2 - dy1 * dx2
+            dot = dx1 * dx2 + dy1 * dy2
+            angle = torch.atan2(cross, dot)
+            angles_sum = angles_sum + angle
 
-    # Parity check (odd = inside)
-    return (inside % 2).clamp(max=1.0)
+        winding = angles_sum / (2 * math.pi)
+        inside = inside + torch.sigmoid(20.0 * (winding.abs() - 0.5))
+
+    return inside.clamp(0.0, 1.0)
 
 
 def _sdf_smooth(
@@ -123,35 +126,27 @@ def _sdf_smooth(
 ) -> torch.Tensor:
     """Compute smooth SDF from B-spline control points via differentiable rasterization.
 
-    Parameters
-    ----------
-    grid_x, grid_y : Tensor, shape ``(H, W)``
-    control_points : Tensor, shape ``(N_control, 2)``
-        B-spline control points defining a closed contour.
-    n_eval : int
-        Number of evaluation points on the spline curve.
-
-    Returns
-    -------
-    sdf : Tensor, shape ``(H, W)``
+    Uses soft-min for distance and winding number for sign.
     """
-    # Evaluate B-spline at n_eval points
     t_vals = torch.linspace(0, 1, n_eval, device=control_points.device, dtype=control_points.dtype)
-    curve = _eval_bspline_closed(control_points, t_vals)  # (n_eval, 2)
+    curve = _eval_bspline_closed(control_points, t_vals)
 
-    # Compute distance from each grid point to nearest curve point
-    # grid: (H, W), curve: (n_eval, 2)
-    gx = grid_x.unsqueeze(-1)  # (H, W, 1)
-    gy = grid_y.unsqueeze(-1)  # (H, W, 1)
-    cx = curve[:, 0].reshape(1, 1, -1)  # (1, 1, n_eval)
+    gx = grid_x.unsqueeze(-1)
+    gy = grid_y.unsqueeze(-1)
+    cx = curve[:, 0].reshape(1, 1, -1)
     cy = curve[:, 1].reshape(1, 1, -1)
 
-    dist_sq = (gx - cx) ** 2 + (gy - cy) ** 2  # (H, W, n_eval)
-    min_dist = torch.sqrt(dist_sq.min(dim=-1).values + 1e-12)  # (H, W)
+    dist_sq = (gx - cx) ** 2 + (gy - cy) ** 2
+    dists = torch.sqrt(dist_sq + 1e-12)
 
-    # Determine inside/outside using winding number approximation
-    contours = curve.unsqueeze(0)  # (1, n_eval, 2)
-    inside = _point_in_polygon(grid_x, grid_y, contours)
+    # Soft-min for differentiable distance aggregation
+    softmin_temp = 10.0
+    weights = torch.softmax(-softmin_temp * dists, dim=-1)
+    min_dist = (weights * dists).sum(dim=-1)
+
+    # Differentiable winding number
+    contours = curve.unsqueeze(0)
+    inside = _winding_number(grid_x, grid_y, contours)
 
     return min_dist * (1 - 2 * inside)
 
@@ -160,51 +155,31 @@ def _eval_bspline_closed(
     control_points: torch.Tensor,
     t: torch.Tensor,
 ) -> torch.Tensor:
-    """Evaluate a closed uniform cubic B-spline.
-
-    Parameters
-    ----------
-    control_points : Tensor, shape ``(N, 2)``
-    t : Tensor, shape ``(T,)``
-        Parameter values in [0, 1).
-
-    Returns
-    -------
-    curve : Tensor, shape ``(T, 2)``
-    """
+    """Evaluate a closed uniform cubic B-spline (vectorized, differentiable)."""
     N = control_points.shape[0]
-    device = control_points.device
-    dtype = control_points.dtype
 
-    # Map t to spline parameter
     t_scaled = t * N
-    curve = torch.zeros(t.shape[0], 2, device=device, dtype=dtype)
+    segments = t_scaled.floor().long() % N
+    fracs = t_scaled - t_scaled.floor()
 
-    for i in range(t.shape[0]):
-        s = t_scaled[i]
-        seg = int(s.floor().item()) % N
-        frac = s - s.floor()
+    # Standard uniform cubic B-spline: segment i blends ctrl pts i, i+1, i+2, i+3
+    idx0 = segments % N
+    idx1 = (segments + 1) % N
+    idx2 = (segments + 2) % N
+    idx3 = (segments + 3) % N
 
-        # Cubic B-spline basis (4 control points)
-        idx0 = (seg - 1) % N
-        idx1 = seg % N
-        idx2 = (seg + 1) % N
-        idx3 = (seg + 2) % N
+    p0 = control_points[idx0]
+    p1 = control_points[idx1]
+    p2 = control_points[idx2]
+    p3 = control_points[idx3]
 
-        p0 = control_points[idx0]
-        p1 = control_points[idx1]
-        p2 = control_points[idx2]
-        p3 = control_points[idx3]
-
-        f = frac
-        # Uniform cubic B-spline matrix
-        curve[i] = (
-            (1 - f) ** 3 / 6 * p0
-            + (3 * f ** 3 - 6 * f ** 2 + 4) / 6 * p1
-            + (-3 * f ** 3 + 3 * f ** 2 + 3 * f + 1) / 6 * p2
-            + f ** 3 / 6 * p3
-        )
-
+    f = fracs.unsqueeze(-1)
+    curve = (
+        (1 - f) ** 3 / 6 * p0
+        + (3 * f ** 3 - 6 * f ** 2 + 4) / 6 * p1
+        + (-3 * f ** 3 + 3 * f ** 2 + 3 * f + 1) / 6 * p2
+        + f ** 3 / 6 * p3
+    )
     return curve
 
 

@@ -39,12 +39,16 @@ class EndToEndPipeline:
         fab_model=None,
         grid_shape: tuple[int, int] = (32, 32),
         wavelengths_nm: list[float] | None = None,
+        eps_low: float = 1.0,
+        eps_high: float = 12.0,
         device: str | torch.device = "cpu",
     ):
         self.solver = solver
         self.fab_model = fab_model
         self.grid_shape = grid_shape
         self.wavelengths_nm = wavelengths_nm or [532.0]
+        self.eps_low = eps_low
+        self.eps_high = eps_high
         self._device = torch.device(device)
 
     @property
@@ -86,8 +90,13 @@ class EndToEndPipeline:
         # Fabrication model forward
         if self.fab_model is not None:
             fab_result = self.fab_model.forward(binary)
-            printed = fab_result.field.squeeze(0)
-            fab_loss = ((binary - printed) ** 2).mean()
+            # Handle both dict (HopkinsLithoModel) and SimResult (LearnedFabModel)
+            if isinstance(fab_result, dict):
+                printed = fab_result["printed_contour"]
+                fab_loss = fab_result["epe"]
+            else:
+                printed = fab_result.field.squeeze(0)
+                fab_loss = ((binary - printed) ** 2).mean()
         else:
             printed = binary
             fab_loss = torch.tensor(0.0, dtype=torch.float64, device=self._device)
@@ -106,7 +115,7 @@ class EndToEndPipeline:
                 y0 = i * layer_h
                 y1 = min((i + 1) * layer_h, H)
                 avg = printed[y0:y1, :].mean(dim=0)
-                layers.append(1.0 + 11.0 * avg)
+                layers.append(self.eps_low + (self.eps_high - self.eps_low) * avg)
 
             geometry = torch.stack(layers)
             result = self.solver.forward(geometry, wavelengths=self.wavelengths_nm)

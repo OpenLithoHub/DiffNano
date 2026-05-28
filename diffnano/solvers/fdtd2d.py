@@ -211,19 +211,28 @@ class FDTDSolver2D:
 
         pos = source.get("pos", None)
         if pos is not None:
-            # Point source
             y, x = pos
             if 0 <= y < H and 0 <= x < W:
                 field = field.clone()
                 field[y, x] = field[y, x] + waveform
         else:
-            # Line source across the middle
             row = source.get("row", H // 2)
             if 0 <= row < H:
                 field = field.clone()
                 field[row, :] = field[row, :] + waveform
 
         return field
+
+    def _cpml_damping(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Extract CPML damping coefficients for x and y boundaries.
+
+        Returns (b_x, c_x, b_y, c_y) shaped for broadcasting with (H, W).
+        """
+        b_x = self._cpml_x.b.to(self._device).to(torch.float64)
+        c_x = self._cpml_x.c.to(self._device).to(torch.float64)
+        b_y = self._cpml_y.b.to(self._device).to(torch.float64)
+        c_y = self._cpml_y.c.to(self._device).to(torch.float64)
+        return b_x, c_x, b_y, c_y
 
     def _time_step_tm(
         self,
@@ -235,39 +244,32 @@ class FDTDSolver2D:
         step: int,
         source: dict,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """One FDTD time step for TM polarization (Ez, Hx, Hy).
-
-        Update equations (normalized units, c=1):
-            Hx^{n+1/2} = Hx^{n-1/2} - (dt/dy) * (Ez^n[i,j+1] - Ez^n[i,j])
-            Hy^{n+1/2} = Hy^{n-1/2} + (dt/dx) * (Ez^n[i+1,j] - Ez^n[i,j])
-            Ez^{n+1} = Ez^n + (dt/eps) * ((Hy^{n+1/2}[i,j] - Hy^{n+1/2}[i-1,j])/dx
-                                           - (Hx^{n+1/2}[i,j] - Hx^{n+1/2}[i,j-1])/dy)
-        """
+        """One FDTD time step for TM polarization (Ez, Hx, Hy) with CPML."""
         dt = self.dt
         dx = self.dl
         dy = self.dl
 
-        # Update H fields
-        # Hx update: Hx -= dt/dy * dEz/dy
+        b_x, c_x, b_y, c_y = self._cpml_damping()
+
+        # Update H fields with CPML damping
         dEz_dy = torch.zeros_like(Ez)
         dEz_dy[:, :-1] = (Ez[:, 1:] - Ez[:, :-1]) / dy
-        Hx = Hx - (dt / mu_r) * dEz_dy
+        Hx = b_y.unsqueeze(0) * Hx - (dt / mu_r) * (c_y.unsqueeze(0) * dEz_dy + dEz_dy)
 
-        # Hy update: Hy += dt/dx * dEz/dx
         dEz_dx = torch.zeros_like(Ez)
         dEz_dx[:-1, :] = (Ez[1:, :] - Ez[:-1, :]) / dx
-        Hy = Hy + (dt / mu_r) * dEz_dx
+        Hy = b_x.unsqueeze(0) * Hy + (dt / mu_r) * (c_x.unsqueeze(0) * dEz_dx + dEz_dx)
 
-        # Update E field
-        # Ez update: Ez += dt/eps * (dHy/dx - dHx/dy)
+        # Update E field with CPML damping
         dHy_dx = torch.zeros_like(Hy)
         dHy_dx[1:, :] = (Hy[1:, :] - Hy[:-1, :]) / dx
         dHx_dy = torch.zeros_like(Hx)
         dHx_dy[:, 1:] = (Hx[:, 1:] - Hx[:, :-1]) / dy
 
-        Ez = Ez + (dt / eps_r) * (dHy_dx - dHx_dy)
+        Ez = b_x.unsqueeze(0) * b_y.unsqueeze(1) * Ez + (dt / eps_r) * (
+            c_x.unsqueeze(0) * dHy_dx + dHy_dx - c_y.unsqueeze(1) * dHx_dy - dHx_dy
+        )
 
-        # Inject source
         Ez = self._inject_source(Ez, step, source)
 
         return Ez, Hx, Hy
@@ -282,39 +284,32 @@ class FDTDSolver2D:
         step: int,
         source: dict,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """One FDTD time step for TE polarization (Hz, Ex, Ey).
-
-        Update equations (normalized units, c=1):
-            Ex^{n+1/2} = Ex^{n-1/2} + (dt/(eps*dx)) * (Hz^n[i,j] - Hz^n[i,j-1])
-            Ey^{n+1/2} = Ey^{n-1/2} - (dt/(eps*dy)) * (Hz^n[i,j] - Hz^n[i-1,j])
-            Hz^{n+1} = Hz^n + (dt/mu) * ((Ey^{n+1/2}[i+1,j] - Ey^{n+1/2}[i,j])/dx
-                                          - (Ex^{n+1/2}[i,j+1] - Ex^{n+1/2}[i,j])/dy)
-        """
+        """One FDTD time step for TE polarization (Hz, Ex, Ey) with CPML."""
         dt = self.dt
         dx = self.dl
         dy = self.dl
 
-        # Update E fields
-        # Ex update: Ex += dt/(eps*dx) * dHz/dx
+        b_x, c_x, b_y, c_y = self._cpml_damping()
+
+        # Update E fields with CPML
         dHz_dx = torch.zeros_like(Hz)
         dHz_dx[:, 1:] = (Hz[:, 1:] - Hz[:, :-1]) / dx
-        Ex = Ex + (dt / eps_r) * dHz_dx
+        Ex = b_x.unsqueeze(0) * Ex + (dt / eps_r) * (c_x.unsqueeze(0) * dHz_dx + dHz_dx)
 
-        # Ey update: Ey -= dt/(eps*dy) * dHz/dy
         dHz_dy = torch.zeros_like(Hz)
         dHz_dy[1:, :] = (Hz[1:, :] - Hz[:-1, :]) / dy
-        Ey = Ey - (dt / eps_r) * dHz_dy
+        Ey = b_y.unsqueeze(0) * Ey - (dt / eps_r) * (c_y.unsqueeze(0) * dHz_dy + dHz_dy)
 
-        # Update H field
-        # Hz update: Hz += dt/mu * (dEy/dx - dEx/dy)
+        # Update H field with CPML
         dEy_dx = torch.zeros_like(Ey)
         dEy_dx[:-1, :] = (Ey[1:, :] - Ey[:-1, :]) / dx
         dEx_dy = torch.zeros_like(Ex)
         dEx_dy[:, :-1] = (Ex[:, 1:] - Ex[:, :-1]) / dy
 
-        Hz = Hz + (dt / mu_r) * (dEy_dx - dEx_dy)
+        Hz = b_x.unsqueeze(0) * b_y.unsqueeze(1) * Hz + (dt / mu_r) * (
+            c_x.unsqueeze(0) * dEy_dx + dEy_dx - c_y.unsqueeze(1) * dEx_dy - dEx_dy
+        )
 
-        # Inject source
         Hz = self._inject_source(Hz, step, source)
 
         return Hz, Ex, Ey
@@ -357,9 +352,14 @@ class FDTDSolver2D:
             Ey = torch.zeros(H, W, dtype=dtype, device=device)
 
             snapshots = []
+            probe_pos = source.get("probe", None)
 
             for step in range(n_steps):
                 Hz, Ex, Ey = self._time_step_te(Hz, Ex, Ey, eps_r, mu_r, step, source)
+
+                if probe_pos is not None:
+                    py, px = probe_pos
+                    snapshots.append(Hz[py, px].detach().clone())
 
             return Hz, snapshots
 

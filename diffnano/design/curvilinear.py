@@ -115,11 +115,11 @@ class CurvilinearMask:
         segments = (t_scaled.floor().long()) % N
         fracs = t_scaled - t_scaled.floor()
 
-        # Gather 4 control points per segment
-        idx0 = (segments - 1) % N
-        idx1 = segments % N
-        idx2 = (segments + 1) % N
-        idx3 = (segments + 2) % N
+        # Standard uniform cubic B-spline: segment i blends pts i, i+1, i+2, i+3
+        idx0 = segments % N
+        idx1 = (segments + 1) % N
+        idx2 = (segments + 2) % N
+        idx3 = (segments + 3) % N
 
         p0 = control_points[idx0]
         p1 = control_points[idx1]
@@ -155,28 +155,26 @@ class CurvilinearMask:
         cy = curve_points[:, 1].reshape(1, 1, -1)
 
         dist_sq = (gx - cx) ** 2 + (gy - cy) ** 2
-        min_dist = torch.sqrt(dist_sq.min(dim=-1).values + 1e-12)
+        dists = torch.sqrt(dist_sq + 1e-12)
+
+        # Soft-min for differentiable aggregation
+        softmin_temp = 10.0
+        weights = torch.softmax(-softmin_temp * dists, dim=-1)
+        min_dist = (weights * dists).sum(dim=-1)
 
         # Differentiable winding number for inside/outside
-        # Uses the formula: winding ≈ (1/2π) Σ atan2(cross, dot)
-        # Approximated by summing angles from consecutive curve points
+        # Uses atan2-based angle accumulation
         dx = curve_points[:, 0].unsqueeze(0).unsqueeze(0) - grid_x.unsqueeze(-1)
         dy = curve_points[:, 1].unsqueeze(0).unsqueeze(0) - grid_y.unsqueeze(-1)
 
-        # Angles from grid point to each curve point
         angles = torch.atan2(dy, dx)  # (H, W, n_pts)
 
-        # Angle differences between consecutive points
         angle_diff = angles[..., 1:] - angles[..., :-1]
-        # Wrap to [-π, π]
         angle_diff = torch.atan2(torch.sin(angle_diff), torch.cos(angle_diff))
 
-        # Sum of angle differences = 2π * winding number
-        winding_sum = angle_diff.sum(dim=-1)  # (H, W)
+        winding_sum = angle_diff.sum(dim=-1)
         winding_number = winding_sum / (2 * math.pi)
 
-        # Inside if winding number is close to ±1
-        # Use sigmoid for smooth differentiable transition
         inside = torch.sigmoid(20.0 * (winding_number.abs() - 0.5))
 
         return min_dist * (1 - 2 * inside)

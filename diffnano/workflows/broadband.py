@@ -38,6 +38,8 @@ class BroadbandOptimizer:
         weights: Sequence[float] | None = None,
         grid_shape: tuple[int, int] = (32, 32),
         n_layers: int = 5,
+        eps_low: float = 1.0,
+        eps_high: float = 12.0,
         device: str | torch.device = "cpu",
     ):
         self.solver = solver
@@ -50,6 +52,8 @@ class BroadbandOptimizer:
         )
         self.grid_shape = grid_shape
         self.n_layers = n_layers
+        self.eps_low = eps_low
+        self.eps_high = eps_high
         self._device = torch.device(device)
 
     @property
@@ -88,14 +92,20 @@ class BroadbandOptimizer:
             y0 = min(i * layer_thickness, H)
             y1 = min((i + 1) * layer_thickness, H)
             avg_density = density[y0:y1, :].mean(dim=0)
-            layers.append(1.0 + 11.0 * avg_density)
+            layers.append(self.eps_low + (self.eps_high - self.eps_low) * avg_density)
 
         geometry = torch.stack(layers)
 
         result = self.solver.forward(geometry, wavelengths=self.wavelengths)
 
-        idx = target_order + self.solver.fourier_orders
-        efficiencies = result.field[:, idx]
+        if hasattr(self.solver, "diffraction_efficiency"):
+            efficiencies = self.solver.diffraction_efficiency(
+                geometry, wavelengths=self.wavelengths, order=target_order,
+            )
+        else:
+            idx = target_order + self.solver.fourier_orders
+            idx = idx.clamp(0, result.field.shape[-1] - 1)
+            efficiencies = result.field[:, idx]
 
         # Weighted negative efficiency (minimize = maximize efficiency)
         loss = -(self.weights * efficiencies).sum()

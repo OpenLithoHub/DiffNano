@@ -62,7 +62,9 @@ def minimum_cd_penalty(
     opened = -F.max_pool2d(-eroded, k_size, stride=1, padding=r)
 
     # Penalty: difference between original and opened
-    diff = density.squeeze() - opened.squeeze()
+    orig_2d = density.reshape(-1, *density.shape[-2:])
+    opened_2d = opened.reshape(-1, *opened.shape[-2:])
+    diff = orig_2d - opened_2d
     return (diff ** 2).mean()
 
 
@@ -112,7 +114,9 @@ def curvature_penalty(
     boundary_weight = (grad_x ** 2 + grad_y ** 2).sqrt()
 
     weighted_lap = (laplacian ** 2) * boundary_weight
-    return weighted_lap.mean()
+    # Apply max_curvature threshold — only penalize excess curvature
+    excess = torch.clamp(weighted_lap - max_curvature ** 2, min=0.0)
+    return excess.mean()
 
 
 def binarization_penalty(
