@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from diffnano.solvers import FDFDSolver2D, FDTDSolver2D, RCWASolver, SimResult, Solver
+from diffnano.solvers import FDFDSolver2D, FDTDSolver2D, FDTDSolver3D, RCWASolver, SimResult, Solver
 
 
 class TestSimResult:
@@ -253,3 +253,86 @@ class TestFDTDSolver2D:
         result = solver.forward(eps)
         assert "polarization" in result.metadata
         assert result.metadata["n_steps"] == 10
+
+
+# -----------------------------------------------------------------------
+# FDTD 3D Solver
+# -----------------------------------------------------------------------
+
+
+class TestFDTDSolver3D:
+    @pytest.fixture
+    def solver(self):
+        return FDTDSolver3D(
+            grid_shape=(10, 10, 10),
+            dl=20.0,
+            wavelength_nm=1550.0,
+            pml_layers=0,
+            n_steps=5,
+            device="cpu",
+        )
+
+    def test_init(self, solver):
+        assert solver.grid_shape == (10, 10, 10)
+        assert solver.n_steps == 5
+        assert solver.courant == 0.4
+
+    def test_forward_shape(self, solver):
+        eps = torch.ones(10, 10, 10, dtype=torch.float64) * 2.25
+        result = solver.forward(eps)
+        assert isinstance(result, SimResult)
+        assert result.field.shape == (3, 10, 10, 10)
+
+    def test_gradient_flows(self, solver):
+        eps = torch.full((10, 10, 10), 2.25, dtype=torch.float64, requires_grad=True)
+        result = solver.forward(eps)
+        loss = result.field.sum()
+        loss.backward()
+        assert eps.grad is not None
+        assert eps.grad.shape == (10, 10, 10)
+
+    def test_point_source(self, solver):
+        eps = torch.ones(10, 10, 10, dtype=torch.float64) * 2.25
+        result = solver.forward(eps, source={"type": "gaussian_pulse", "pos": [5, 5, 5]})
+        assert result.field.shape == (3, 10, 10, 10)
+
+    def test_plane_source(self, solver):
+        eps = torch.ones(10, 10, 10, dtype=torch.float64) * 2.25
+        result = solver.forward(eps, source={"type": "gaussian_pulse", "plane": "xy", "z": 3})
+        assert result.field.shape == (3, 10, 10, 10)
+
+    def test_continuous_source(self, solver):
+        eps = torch.ones(10, 10, 10, dtype=torch.float64) * 2.25
+        result = solver.forward(eps, source={"type": "continuous"})
+        assert result.field.shape == (3, 10, 10, 10)
+
+    def test_checkpoint_mode(self):
+        solver = FDTDSolver3D(
+            grid_shape=(8, 8, 8),
+            n_steps=6,
+            use_checkpoint=True,
+            checkpoint_segments=2,
+            pml_layers=0,
+        )
+        eps = torch.ones(8, 8, 8, dtype=torch.float64) * 2.25
+        result = solver.forward(eps)
+        assert result.field.shape == (3, 8, 8, 8)
+
+    def test_time_series(self, solver):
+        eps = torch.ones(10, 10, 10, dtype=torch.float64) * 2.25
+        ts = solver.time_series(eps, probe=(5, 5, 5), n_steps=5)
+        assert ts.shape == (5,)
+
+    def test_solver_protocol(self, solver):
+        assert isinstance(solver, Solver)
+
+    def test_4d_geometry_input(self, solver):
+        eps = torch.ones(1, 10, 10, 10, dtype=torch.float64) * 2.25
+        result = solver.forward(eps)
+        assert result.field.shape == (3, 10, 10, 10)
+
+    def test_metadata(self, solver):
+        eps = torch.ones(10, 10, 10, dtype=torch.float64) * 2.25
+        result = solver.forward(eps)
+        assert "grid_shape" in result.metadata
+        assert result.metadata["n_steps"] == 5
