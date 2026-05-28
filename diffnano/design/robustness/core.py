@@ -243,16 +243,22 @@ def robust_gradient_step(
     if perturbation_fn is None:
         perturbation_fn = _default_perturbation
 
-    if antithetic and n_samples % 2 == 0:
-        half = n_samples // 2
-        eps = torch.randn(half, device=params.device, dtype=params.dtype)
-        deltas = torch.cat([eps, -eps]) * sigma_nm
-    else:
-        deltas = torch.randn(n_samples, device=params.device, dtype=params.dtype) * sigma_nm
-
     losses = []
+    half = n_samples // 2
+    saved_eps = []
+
     for i in range(n_samples):
-        perturbed = perturbation_fn(params, deltas[i])
+        # Per-element noise for spatial parameters
+        if antithetic and n_samples % 2 == 0:
+            if i < half:
+                eps = torch.randn_like(params)
+                saved_eps.append(eps)
+            else:
+                eps = -saved_eps[i - half]  # antithetic pair
+        else:
+            eps = torch.randn_like(params)
+
+        perturbed = perturbation_fn(params, eps * sigma_nm)
         losses.append(forward_fn(perturbed))
 
     return torch.stack(losses).mean()

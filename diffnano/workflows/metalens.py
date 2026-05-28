@@ -204,13 +204,13 @@ class MetalensDesigner:
             Optimized height map.
         loss_history : list of float
         """
-        max_h = self.wavelength_nm / (2 * (self.n_material - self.n_ambient))
-        height_map = torch.rand(
-            *self.grid_shape,
-            device=self.device,
-            dtype=torch.float64,
-        ) * max_h
-        height_map = height_map.detach().requires_grad_(True)
+        k0 = 2 * math.pi / self.wavelength_nm
+        dn = self.n_material - self.n_ambient
+        # Initialize from noisy target phase to make optimization non-trivial
+        target_wrapped = self.target_phase % (2 * math.pi)
+        noise = torch.randn_like(target_wrapped) * 0.5  # phase noise
+        h_init = (target_wrapped + noise).clamp(0, 2 * math.pi) / (k0 * dn)
+        height_map = h_init.detach().clone().requires_grad_(True)
 
         opt = torch.optim.Adam([height_map], lr=lr)
 
