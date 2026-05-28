@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diffnano"
+version = "0.1.0"
+description = "Differentiable Nanophotonics Design in PyTorch"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [{name = "OpenLithoHub Contributors"}]
+keywords = ["nanophotonics", "inverse-design", "differentiable", "pytorch", "FDTD", "RCWA", "metasurface"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "torch>=2.0",
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+cuda = ["torch>=2.0+cu121"]
+mps = ["torch>=2.0"]
+export = ["gdstk>=0.9"]
+viz = ["matplotlib>=3.7"]
+lint = ["ruff>=0.4"]
+openlithohub = ["openlithohub>=0.1.0a2,<0.2"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+    "gdstk>=0.9",
+    "matplotlib>=3.7",
+]
+
+[tool.setuptools.packages.find]
+include = ["diffnano*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow",
+    "gpu: marks tests requiring GPU",
+    "integration: marks integration tests",
+]
