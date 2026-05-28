@@ -13,7 +13,7 @@ import torch
 
 from diffnano.solvers._result import SimResult
 
-__all__ = ["Solver", "SimResult", "RCWASolver", "FDFDSolver2D", "FDTDSolver2D", "FDTDSolver3D"]
+__all__ = ["Solver", "SimResult", "RCWASolver", "FDFDSolver2D", "FDTDSolver2D", "FDTDSolver3D", "NeuralSurrogate"]
 
 
 @runtime_checkable
@@ -68,4 +68,7 @@ def __getattr__(name):
     if name == "FDTDSolver3D":
         from diffnano.solvers.fdtd3d import FDTDSolver3D
         return FDTDSolver3D
+    if name == "NeuralSurrogate":
+        from diffnano.solvers.surrogate import NeuralSurrogate
+        return NeuralSurrogate
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

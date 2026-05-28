@@ -6,6 +6,8 @@ import torch
 from diffnano.workflows.metalens import MetalensDesigner
 from diffnano.workflows.phc import PhCDesigner
 from diffnano.workflows.waveguide import WaveguideDesigner
+from diffnano.workflows.broadband import BroadbandOptimizer
+from diffnano.solvers.rcwa import RCWASolver
 
 
 class TestMetalensDesigner:
@@ -179,3 +181,46 @@ class TestWaveguideDesigner:
         mode = torch.randn(30, 30, dtype=torch.float64)
         overlap = designer.mode_overlap(mode, mode)
         assert overlap.item() == pytest.approx(1.0, abs=0.01)
+
+
+# -----------------------------------------------------------------------
+# Broadband Optimization
+# -----------------------------------------------------------------------
+
+
+class TestBroadbandOptimizer:
+    @pytest.fixture
+    def optimizer(self):
+        solver = RCWASolver(
+            fourier_orders=3,
+            wavelength_nm=532.0,
+            period_nm=(400.0, 400.0),
+        )
+        return BroadbandOptimizer(
+            solver=solver,
+            wavelengths_nm=[500.0, 532.0, 600.0],
+            grid_shape=(15, 15),
+            n_layers=3,
+        )
+
+    def test_init(self, optimizer):
+        assert optimizer.n_wl == 3
+        assert optimizer.weights.shape == (3,)
+
+    def test_objective(self, optimizer):
+        density = torch.rand(15, 15, dtype=torch.float64)
+        loss = optimizer.objective(density, target_order=0)
+        assert loss.numel() == 1
+
+    def test_objective_gradient(self, optimizer):
+        density = torch.rand(15, 15, dtype=torch.float64, requires_grad=True)
+        loss = optimizer.objective(density, target_order=0)
+        loss.backward()
+        assert density.grad is not None
+
+    def test_optimize_short(self, optimizer):
+        density, history = optimizer.optimize(
+            n_steps=3, target_order=0, verbose=False,
+        )
+        assert density.shape == (15, 15)
+        assert len(history) == 3

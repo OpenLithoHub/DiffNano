@@ -4,6 +4,7 @@ import pytest
 import torch
 
 from diffnano.solvers import FDFDSolver2D, FDTDSolver2D, FDTDSolver3D, RCWASolver, SimResult, Solver
+from diffnano.solvers.surrogate import NeuralSurrogate
 
 
 class TestSimResult:
@@ -336,3 +337,47 @@ class TestFDTDSolver3D:
         result = solver.forward(eps)
         assert "grid_shape" in result.metadata
         assert result.metadata["n_steps"] == 5
+
+
+# -----------------------------------------------------------------------
+# Neural Surrogate
+# -----------------------------------------------------------------------
+
+
+class TestNeuralSurrogate:
+    @pytest.fixture
+    def base_solver(self):
+        return RCWASolver(fourier_orders=3, wavelength_nm=532.0, period_nm=(400.0, 400.0))
+
+    @pytest.fixture
+    def surrogate(self, base_solver):
+        return NeuralSurrogate(base_solver, input_size=10, hidden_channels=8)
+
+    def test_init(self, surrogate):
+        assert surrogate._trained is False
+
+    def test_train_and_forward(self, surrogate):
+        surrogate.train_surrogate(
+            n_samples=20, geometry_shape=(3, 10), n_epochs=5, verbose=False,
+        )
+        assert surrogate._trained is True
+
+        geo = torch.rand(3, 10, dtype=torch.float64) * 11.0 + 1.0
+        result = surrogate.forward(geo, wavelengths=[532.0])
+        assert isinstance(result, SimResult)
+        assert result.field.shape[0] == 1
+        assert result.metadata.get("surrogate") is True
+
+    def test_correction_fallback(self, surrogate):
+        # Before training, should fall back to base solver
+        geo = torch.ones(3, 10, dtype=torch.float64) * 2.0
+        result = surrogate.forward(geo, wavelengths=[532.0])
+        assert isinstance(result, SimResult)
+
+    def test_accuracy(self, surrogate):
+        surrogate.train_surrogate(
+            n_samples=30, geometry_shape=(3, 10), n_epochs=10, verbose=False,
+        )
+        metrics = surrogate.accuracy(n_test=5, geometry_shape=(3, 10))
+        assert "mean_max_rel_error" in metrics
+        assert "worst_max_rel_error" in metrics
