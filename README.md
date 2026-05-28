@@ -40,10 +40,15 @@ guess geometry → differentiable FDTD/RCWA → figure of merit → loss.backwar
 
 - **Differentiable FDTD** — 2D and 3D FDTD with full autograd support; gradients flow through every time step
 - **Differentiable RCWA** — rigorous coupled-wave analysis for periodic structures (metasurfaces, gratings); exact gradients via eigendecomposition differentation
+- **Differentiable FDFD** — frequency-domain solver for CW steady-state problems; GPU-native via dense linear algebra
 - **PyTorch-native** — runs on CPU/GPU/MPS; integrates with standard optimizers (Adam, L-BFGS) and ML training loops
-- **Topology optimization** — density-based parameterization with projection filters; binary/grayscale mask output compatible with e-beam and DUV lithography design rules
-- **Inverse design workflows** — pre-built pipelines for metalens phase profile optimization, beam splitter design, waveguide mode matching, and absorption spectrum targeting
-- **Fabrication constraints** — minimum feature size and curvature penalties compatible with EBL/DUV/EUV processes (shared constraint library with [OpenLithoHub](https://github.com/OpenLithoHub/OpenLithoHub))
+- **DFM-native design** — fabrication constraints in the autograd graph; lithography-aware optimization (Hopkins model + learned fab model + differentiable resist)
+- **Robust optimization** — process-variation-aware design via differentiable Monte Carlo with adaptive axial sampling (C5 + C7)
+- **Neural surrogate** — CNN-accelerated RCWA for 10-50x optimization speedup with periodic full-solver correction
+- **Curvilinear masks** — B-spline boundary parameterization with differentiable SDF rasterization (no NaN gradients)
+- **Multi-objective Pareto** — automated Pareto front discovery across optical, fabrication, and robustness objectives
+- **Learned representation** — VAE-based latent space optimization for faster design space exploration
+- **End-to-end pipeline** — optical specification to GDSII export in a single differentiable pipeline
 - **Benchmark suite** — standardized figures of merit and reference designs for fair comparison across methods
 
 ---
@@ -119,24 +124,37 @@ phc.visualize(optimized_density)
 ```
 diffnano/
 ├── solvers/
-│   ├── fdtd.py          # Differentiable FDTD (2D + 3D)
+│   ├── fdtd2d.py        # Differentiable 2D FDTD
+│   ├── fdtd3d.py        # Differentiable 3D FDTD (CPML, checkpointing)
 │   ├── rcwa.py          # Differentiable RCWA for periodic structures
-│   └── fdfd.py          # Frequency-domain FD (fast, no time stepping)
+│   ├── fdfd2d.py        # Frequency-domain FD (GPU-native, dense solve)
+│   ├── litho.py         # Hopkins lithography model (Gaussian PSF)
+│   ├── surrogate.py     # Neural surrogate (CNN-accelerated RCWA)
+│   ├── fab_model.py     # Learned fabrication model (U-Net)
+│   └── resist.py        # Differentiable resist model
 ├── design/
-│   ├── parameterization.py   # Density, level-set, B-spline geometry representations
-│   ├── projection.py         # Heaviside projection + smoothing filters
-│   └── constraints.py        # Fabrication constraints (MFS, curvature)
+│   ├── parameterization.py  # Density, height map, B-spline representations
+│   ├── projection.py        # Heaviside projection + beta-continuation
+│   ├── curvilinear.py       # Curvilinear mask (fixed SDF rasterization)
+│   ├── representation_learning.py  # VAE latent space optimization
+│   ├── constraints_shared/  # Cross-domain DFM constraint primitives
+│   └── robustness/
+│       ├── core.py           # C5: MC robust optimization
+│       ├── adaptive.py       # C7: Adaptive axial + curriculum
+│       └── subspace.py       # Multi-axis correlated perturbations
 ├── workflows/
-│   ├── metalens.py      # Metalens inverse design pipeline
-│   ├── splitter.py      # Beam splitter / power divider
-│   ├── waveguide.py     # Waveguide coupler and mode converter
-│   └── absorber.py      # Broadband absorber / color filter
+│   ├── metalens.py      # Metalens inverse design
+│   ├── dfm_metalens.py  # DFM-native metalens (litho + optical joint)
+│   ├── phc.py           # Photonic crystal bandgap optimization
+│   ├── waveguide.py     # Waveguide bend / mode converter
+│   ├── broadband.py     # Multi-wavelength optimization
+│   ├── multi_objective.py  # Pareto front exploration
+│   └── end_to_end.py    # Full specification-to-GDSII pipeline
 ├── benchmark/
 │   ├── datasets.py      # Reference designs from literature
-│   └── metrics.py       # Transmission efficiency, Strehl ratio, bandwidth
+│   └── metrics.py       # Transmission, Strehl ratio, bandgap
 └── export/
-    ├── gds.py           # GDS-II export (gdstk)
-    └── oasis.py         # OASIS export
+    └── gds.py           # GDS-II export (gdstk)
 ```
 
 ---
@@ -156,12 +174,13 @@ diffnano/
 
 ## Roadmap
 
-- [ ] **v0.1** — RCWA solver + metalens workflow + GDS export
-- [ ] **v0.2** — 2D FDTD + photonic crystal optimization
-- [ ] **v0.3** — 3D FDTD (memory-efficient checkpointing)
-- [ ] **v0.4** — Multi-wavelength / broadband optimization
-- [ ] **v0.5** — Integration with OpenLithoHub fabrication constraint library
-- [ ] **v1.0** — Full benchmark suite + arXiv paper
+- [x] **v0.1** — RCWA solver + metalens workflow + DFM-metalens + robust MC
+- [x] **v0.2** — 2D FDTD + photonic crystal + waveguide + FDFD
+- [x] **v0.3** — 3D FDTD + C7 adaptive robust optimization + multi-axis perturbations
+- [x] **v0.4** — Neural surrogate + broadband multi-wavelength optimization
+- [x] **v0.5** — Learned fabrication model + differentiable resist + curvilinear masks
+- [x] **v0.6** — Multi-objective Pareto + end-to-end pipeline + VAE representation
+- [ ] **v1.0** — Full benchmark suite + arXiv paper + JOSS submission
 
 ---
 

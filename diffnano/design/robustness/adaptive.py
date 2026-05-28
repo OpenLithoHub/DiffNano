@@ -228,7 +228,9 @@ class AdaptiveRobustOptimizer:
         if cov_matrix is not None:
             self.cov_chol = torch.linalg.cholesky(cov_matrix)
         else:
-            self.cov_chol = torch.eye(n_variation_dims, device=self._device, dtype=torch.float64) * sigma
+            self.cov_chol = torch.eye(
+                n_variation_dims, device=self._device, dtype=torch.float64,
+            ) * sigma
 
     def compute_robust_loss(
         self,
@@ -259,8 +261,6 @@ class AdaptiveRobustOptimizer:
             self.n_dims, self.sigma,
             device=self._device, dtype=params.dtype,
         )
-        n_axial = axial.shape[0]
-
         # Phase 2: Random samples based on curriculum
         n_random = int(self.n_random_budget * curriculum_frac)
         if n_random > 0:

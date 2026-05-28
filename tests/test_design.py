@@ -10,6 +10,7 @@ from diffnano.design.constraints_shared import (
     curvature_penalty,
     minimum_cd_penalty,
 )
+from diffnano.design.curvilinear import CurvilinearMask, dvas_boundary
 from diffnano.design.parameterization import (
     BSplineCurve,
     DensityField,
@@ -20,7 +21,7 @@ from diffnano.design.projection import (
     heaviside_projection,
     smooth_filter,
 )
-from diffnano.design.curvilinear import CurvilinearMask, dvas_boundary
+from diffnano.design.representation_learning import LearnedRepresentation
 
 
 class TestHeightMap:
@@ -258,3 +259,52 @@ class TestDVASBoundary:
         pts = dvas_boundary(4, dist, center_angle=None)
         pts.sum().backward()
         assert dist.grad is not None
+
+
+# -----------------------------------------------------------------------
+# Learned Representation (C8)
+# -----------------------------------------------------------------------
+
+
+class TestLearnedRepresentation:
+    @pytest.fixture
+    def vae(self):
+        return LearnedRepresentation(
+            grid_size=16,
+            latent_dim=4,
+            hidden_channels=8,
+        )
+
+    def test_init(self, vae):
+        assert vae.latent_dim == 4
+        assert vae.grid_size == 16
+
+    def test_train(self, vae):
+        designs = [torch.rand(16, 16, dtype=torch.float64) for _ in range(10)]
+        loss_history = vae.train_vae(designs, n_epochs=3, batch_size=5, verbose=False)
+        assert len(loss_history) == 3
+
+    def test_encode_decode(self, vae):
+        designs = [torch.rand(16, 16, dtype=torch.float64) for _ in range(10)]
+        vae.train_vae(designs, n_epochs=3, batch_size=5, verbose=False)
+
+        z = vae.encode(designs[0])
+        assert z.shape == (4,)
+
+        recon = vae.decode(z)
+        assert recon.shape == (16, 16)
+        assert recon.min() >= 0.0
+        assert recon.max() <= 1.0
+
+    def test_latent_optimization(self, vae):
+        designs = [torch.rand(16, 16, dtype=torch.float64) for _ in range(10)]
+        vae.train_vae(designs, n_epochs=3, batch_size=5, verbose=False)
+
+        def loss_fn(density):
+            return -density.mean()
+
+        result, history = vae.optimize_in_latent_space(
+            loss_fn, n_steps=5, lr=0.01, verbose=False,
+        )
+        assert result.shape == (16, 16)
+        assert len(history) == 5

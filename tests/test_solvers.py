@@ -4,9 +4,9 @@ import pytest
 import torch
 
 from diffnano.solvers import FDFDSolver2D, FDTDSolver2D, FDTDSolver3D, RCWASolver, SimResult, Solver
-from diffnano.solvers.surrogate import NeuralSurrogate
 from diffnano.solvers.fab_model import LearnedFabModel
 from diffnano.solvers.resist import DifferentiableResistModel
+from diffnano.solvers.surrogate import NeuralSurrogate
 
 
 class TestSimResult:

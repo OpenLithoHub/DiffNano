@@ -99,7 +99,9 @@ class _PhysicsGatedNet(nn.Module):
 
         # Final resize to match input dimensions
         if x.shape[2] != H_in or x.shape[3] != W_in:
-            x = nn.functional.interpolate(x, size=(H_in, W_in), mode="bilinear", align_corners=False)
+            x = nn.functional.interpolate(
+                x, size=(H_in, W_in), mode="bilinear", align_corners=False,
+            )
 
         # Physics-gated output: sigmoid ensures [0, 1] (energy conservation)
         return torch.sigmoid(self.final(x))

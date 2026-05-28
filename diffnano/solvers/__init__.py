@@ -13,7 +13,10 @@ import torch
 
 from diffnano.solvers._result import SimResult
 
-__all__ = ["Solver", "SimResult", "RCWASolver", "FDFDSolver2D", "FDTDSolver2D", "FDTDSolver3D", "NeuralSurrogate"]
+__all__ = [
+    "Solver", "SimResult", "RCWASolver", "FDFDSolver2D",
+    "FDTDSolver2D", "FDTDSolver3D", "NeuralSurrogate",
+]
 
 
 @runtime_checkable

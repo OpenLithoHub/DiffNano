@@ -49,7 +49,10 @@ def dvas_boundary(
         Boundary points in (x, y) coordinates.
     """
     if center_angle is None:
-        center_angle = torch.linspace(0, 2 * math.pi, n_points + 1, device=center_distance.device, dtype=center_distance.dtype)[:-1]
+        center_angle = torch.linspace(
+            0, 2 * math.pi, n_points + 1,
+            device=center_distance.device, dtype=center_distance.dtype,
+        )[:-1]
 
     x = center_distance * torch.cos(center_angle)
     y = center_distance * torch.sin(center_angle)
@@ -107,8 +110,6 @@ class CurvilinearMask:
     ) -> torch.Tensor:
         """Evaluate closed cubic B-spline (vectorized)."""
         N = control_points.shape[0]
-        device = control_points.device
-        dtype = control_points.dtype
 
         t_scaled = t * N
         segments = (t_scaled.floor().long()) % N
@@ -159,7 +160,6 @@ class CurvilinearMask:
         # Differentiable winding number for inside/outside
         # Uses the formula: winding ≈ (1/2π) Σ atan2(cross, dot)
         # Approximated by summing angles from consecutive curve points
-        n_pts = curve_points.shape[0]
         dx = curve_points[:, 0].unsqueeze(0).unsqueeze(0) - grid_x.unsqueeze(-1)
         dy = curve_points[:, 1].unsqueeze(0).unsqueeze(0) - grid_y.unsqueeze(-1)
 
@@ -211,8 +211,6 @@ class CurvilinearMask:
         curve = self._eval_bspline(control_points, t)
 
         # Compute SDF
-        grid_x = self.grid_x.to(device)
-        grid_y = self.grid_y.to(device)
         sdf = self._compute_sdf(curve)
 
         # Apply shift
@@ -228,7 +226,10 @@ class CurvilinearMask:
         control_points: torch.Tensor,
     ) -> torch.Tensor:
         """Return the raw signed distance field."""
-        t = torch.linspace(0, 1, self.n_eval, device=control_points.device, dtype=control_points.dtype)
+        t = torch.linspace(
+            0, 1, self.n_eval,
+            device=control_points.device, dtype=control_points.dtype,
+        )
         curve = self._eval_bspline(control_points, t)
         return self._compute_sdf(curve)
 
@@ -263,7 +264,10 @@ class CurvilinearMask:
         radius = min(H, W) * self.pixel_size_nm / 4
 
         # Initialize as circle
-        angles = torch.linspace(0, 2 * math.pi, n_control_points + 1, device=self._device, dtype=torch.float64)[:-1]
+        angles = torch.linspace(
+            0, 2 * math.pi, n_control_points + 1,
+            device=self._device, dtype=torch.float64,
+        )[:-1]
         init_pts = torch.stack([
             center_x + radius * torch.cos(angles),
             center_y + radius * torch.sin(angles),

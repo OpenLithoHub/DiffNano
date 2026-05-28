@@ -181,7 +181,8 @@ class MultiAxisPerturbation:
         pixel_size_nm: float = 5.0,
     ):
         self.sigmas = torch.tensor(
-            [sigma_linewidth_nm, sigma_sidewall_deg, sigma_thickness_nm, sigma_corner_nm],
+            [sigma_linewidth_nm, sigma_sidewall_deg,
+             sigma_thickness_nm, sigma_corner_nm],
             dtype=torch.float64,
         )
         self.pixel_size_nm = pixel_size_nm
@@ -220,7 +221,6 @@ class MultiAxisPerturbation:
         -------
         perturbed : Tensor, shape ``(H, W)``
         """
-        from diffnano.design.robustness.core import linewidth_perturbation
 
         # Apply in sequence: linewidth → sidewall → thickness → corner rounding
         result = density.clone()

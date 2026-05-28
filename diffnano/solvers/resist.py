@@ -61,10 +61,18 @@ class DifferentiableResistModel:
         self._device = torch.device(device)
 
         # Differentiable parameters
-        self.acid_diffusion = torch.tensor(acid_diffusion_length_nm, dtype=torch.float64, device=self._device)
-        self.contrast = torch.tensor(development_contrast, dtype=torch.float64, device=self._device)
-        self.threshold = torch.tensor(threshold_dose, dtype=torch.float64, device=self._device)
-        self.peb_diffusion = torch.tensor(peb_diffusion_nm, dtype=torch.float64, device=self._device)
+        self.acid_diffusion = torch.tensor(
+            acid_diffusion_length_nm, dtype=torch.float64, device=self._device,
+        )
+        self.contrast = torch.tensor(
+            development_contrast, dtype=torch.float64, device=self._device,
+        )
+        self.threshold = torch.tensor(
+            threshold_dose, dtype=torch.float64, device=self._device,
+        )
+        self.peb_diffusion = torch.tensor(
+            peb_diffusion_nm, dtype=torch.float64, device=self._device,
+        )
 
     @property
     def device(self) -> torch.device:
