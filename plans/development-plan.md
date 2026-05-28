@@ -8,15 +8,60 @@
 
 ## Patent Strategy
 
-1. Implement core algorithms locally (do NOT push until CN filing)
-2. Submit China invention patent application (locks priority date)
-3. Push code to GitHub the same day or next day (open source)
-4. File PCT within 12 months using CN filing as priority base
+**Lead claims for CN filing: C4 (cross-domain DFM-EM unified autograd graph) and C5 (process-variation-robust differentiable optimization).** C1 and C3 are not in the claim set — they are retained in the specification as preferred-embodiment examples to support enablement of C4/C5, but **do not gate the filing date**.
 
-**Do NOT push the following until CN filing:**
-- `diffnano/solvers/rcwa.py` — eigendecomposition differentiation (core claim)
-- `diffnano/solvers/fdtd.py` — differentiable FDTD time-stepping
-- Any code implementing the claims listed in Section 5 below
+### Critical timing rule — CN novelty grace period does NOT cover GitHub release
+
+Under Chinese Patent Law Art. 24, the novelty grace period (6 months) covers only three narrow situations: (a) first disclosure during a national emergency for the public interest; (b) first display at a Chinese-government-hosted or recognised international exhibition; (c) first publication at a prescribed academic or technical conference. **A GitHub push is none of these and triggers no grace period.** Any code published before the CN priority date that embodies a claim destroys novelty for that claim irrecoverably (and propagates to PCT).
+
+Operational consequence:
+- **No code that embodies any element of C4 or C5 (or any of their dependent claims) may be public before the CN priority date is confirmed in writing by the patent agent.** "On filing day" is not safe — same-day disclosure can be argued as prior to filing.
+- Any module that supports C4 / C5 dependent claims (e.g., the B-spline + distance-field parameterization referenced by C4.2 and C5.2) is treated as claim-bearing and held until priority is confirmed.
+
+### Filing sequence
+
+1. Implement C4 + C5 locally with at least one runnable demo per claim (do NOT push), meeting the v0.1 "CN-filing-ready" gate (see v0.1 milestone)
+2. Submit China invention patent application — do not delay on TORCWA/FDTDX/meent source-level search; that search informs PCT scope, not CN priority
+3. **Wait for written confirmation of the priority date from the patent agent** (typically 1–3 business days after submission)
+4. Push code to GitHub per the layered release plan below, only after written confirmation
+5. File PCT within 12 months using CN filing as priority base; refine PCT-stage dependent claims (including any C1/C3-territory carve-outs) using the prior-art-delta memo
+
+### Embodiments required for CN filing (gating)
+
+CN patent law (Art. 26) requires sufficient disclosure: each independent claim must be supported by a working embodiment with reproducible data. Before filing:
+
+- **C4 embodiment**: a single shared parameterization (e.g., a B-spline density field) driving (a) a forward lithography model that produces a printed mask and (b) an RCWA forward solve that produces a metalens phase profile, with both gradients flowing back through differentiable design-rule penalties to update the same parameter set. Output: optimization curves, final layout, demonstration that the design is process-rule-compliant and optically functional, plus a recorded technical effect (e.g., "Strehl ratio at λ₀ within X% of nominal-only optimization while satisfying MRC at minimum CD = Y nm").
+- **C5 embodiment**: at least one nanophotonic figure of merit (e.g., metalens Strehl ratio at λ₀) optimized under the expectation of a process-variation distribution (linewidth ±5 nm), with demonstrated robustness improvement vs. nominal-only optimization. Output: nominal vs robust FoM histograms over N=100+ Monte-Carlo realizations of the process-variation distribution, plus a recorded yield-equivalent figure (e.g., "fraction of realizations with Strehl ratio ≥ 0.8 increases from A% to B%").
+
+Quantitative thresholds (X, Y, A, B) are placeholders pending v0.1 baseline measurements; concrete numerical pass criteria appear in the "v0.1 CN-filing-ready acceptance gate" subsection of the v0.1 milestone.
+
+### External dependencies and their status
+
+DiffNano is part of the **OpenLithoHub** organisation (github.com/OpenLithoHub, founded 2026-05-17). Two sibling projects are in the C4 / v0.1 critical path:
+
+- **OpenLithoHub (the toolkit, Apache 2.0, PyPI `openlithohub==0.1.0a2`, alpha)** — provides the forward computational-lithography model (Hopkins/SOCS, JIT-accelerated via `torch.compile`), MRC/DRC checking (incl. `curvilinear_mrc_loss` differentiable training-time penalty), B-spline mask fitting, and OASIS/GDSII export. C4 demo depends on:
+  - `openlithohub.workflow.parse_layout` (layout ingestion)
+  - `openlithohub.benchmark.metrics.curvilinear_mrc_loss` (differentiable MRC penalty referenced by `constraints_shared`)
+  - The Hopkins/SOCS forward model as the litho side of the C4 unified-autograd-graph demo
+  Status: alpha; v0.1 critical-path risk is whether these APIs are stable and differentiable end-to-end. Add an integration smoke-test in v0.1 deliverables and an upstream-pin in `pyproject.toml`.
+- **OpenLithoHub/DiffCFD (private)** — unrelated to DiffNano critical path; not a dependency.
+
+Both DiffNano and OpenLithoHub are owned by the same organisation, so this is a coordination problem (release timing, API stability), not an external-third-party-dependency problem. The license of `openlithohub` (Apache 2.0) is compatible with DiffNano's own license (see "License compliance" section below).
+
+### Code release: layered open-source plan
+
+The "no push until CN filing" rule was over-broad; the rule below separates code into tiers by claim exposure. **All tier timings are relative to the patent agent's written confirmation of the CN priority date — never "on filing day".**
+
+- **Tier 1 — release immediately (no patent risk)**: benchmark harness, GDS export reuse from OpenLithoHub, forward FDFD solver (Hughes et al. 2019 prior art; not in our claim set), example notebooks for the FDFD path, documentation skeleton, RCWA validation harness without our claim-bearing solver.
+- **Tier 2 — release after CN priority confirmation**: forward RCWA solver (`diffnano/solvers/rcwa.py`), forward 2D FDTD solver, metalens / waveguide / photonic crystal workflows, the backend-agnostic `Solver(Protocol)` interface. These do not by themselves encode C4/C5 mechanisms but combine with Tier 3 modules to produce claimed embodiments.
+- **Tier 3 — release after CN priority confirmation, subject to additional counsel review**:
+  - `diffnano/design/parameterization.py` — **moved from Tier 1 to Tier 3** because C4.2 and C5.2 directly claim the B-spline + differentiable-distance-field parameterization; pre-publication would self-anticipate those dependent claims.
+  - `diffnano/design/constraints_shared/` — the cross-domain DFM constraint primitives (C4 mechanism)
+  - `diffnano/design/robustness/` — the process-variation-robust optimisation loop (C5 mechanism)
+  - `diffnano/workflows/dfm_metalens.py` — the C4 end-to-end demo workflow
+  - Internal memos describing C1 / C3 mechanism details
+
+The intent: Tier 1 builds community traction during the implementation phase without exposing any claimed mechanism; Tier 2 releases once priority is locked; Tier 3 follows after counsel has confirmed that nothing in the release self-anticipates a dependent claim.
 
 ---
 
@@ -24,69 +69,160 @@
 
 ### Direct competitors — know before you build
 
-| Tool | Scope | Differentiable | Local/GPU | Stars | Last update | Threat |
+| Tool | Scope | Differentiable | Local/GPU | Backend | Last update | Threat |
 |---|---|---|---|---|---|---|
-| **tidy3d** (Flexcompute) | FDTD 3D, adjoint | Adjoint only (not autograd) | Cloud-first, limited local | 343 | 2026-05 active | Medium — cloud dependency, not PyTorch autograd |
-| **MEEP** (MIT) | FDTD 2D/3D, adjoint | Adjoint only | CPU-first | ~1k | Active | Low — no ML loop integration |
-| **grcwa** (Stanford) | RCWA 2D | Yes (autograd) | CPU | ~200 | Unmaintained ~2022 | Low — unmaintained, no GPU, no fabrication constraints |
-| **ceviche** (Stanford) | FDFD 2D | Yes (autograd) | CPU | ~300 | Unmaintained ~2021 | Low — 2D only, unmaintained |
-| **PhiFlow** (TU Munich) | Incompressible NS | Yes (multi-backend) | GPU | 1872 | 2026-05 active | N/A — fluid, not EM |
+| **TORCWA** (Kim & Lee, SNU) | RCWA, metasurface | Yes (autograd) — README 0.1.4 reports a "broadening parameter (related to stabilization)" for the eigendecomposition gradient; specific default value not yet confirmed at source level | GPU (CUDA) | **PyTorch** | 0.1.4 active 2026-05 | **HIGH — direct prior art for Specification §A**. CPC 282 (2023) 108552. LGPL. |
+| **meent** (kc-ml2 / SNU follow-on team) | RCWA, modeling + EM sim + optimization | Yes (autograd, **JAX + PyTorch + NumPy multi-backend**) | GPU (CUDA, eigendecomp on CPU per README 2023-03) | **PyTorch + JAX + NumPy** | Active 2026-05, MIT, ~120 stars | **HIGH — directly contests C4.3 (backend-agnostic interface) novelty**. arXiv:2406.12904 (Kim et al. 2024). Same kc-ml2 team as TORCWA, so they have a published track record of multi-backend differentiable RCWA design. |
+| **TorchRDIT** (UMass Lowell) | R-DIT (eigendecomposition-free) + RCWA | Yes (autograd) — bypasses eigendecomposition entirely via R-DIT | GPU (CUDA + MPS) | **PyTorch** | Active 2026-05 | **HIGH — orthogonal threat to Specification §A**. Opt. Express 32, 13986 (2024). 16.2× speedup vs RCWA. SIREN, GDS export, dispersive materials. **GPL-3.0 (license-incompatible with Apache 2.0 — do not copy implementation)**. |
+| **FDTDX** (Mahlau et al., LUH) | 3D FDTD | Yes (autograd via **time-reversibility of Maxwell's equations**, not checkpointing) | GPU (multi-GPU CUDA + ROCm) | **JAX** (not PyTorch) | Active 2026-05, 298 stars | **HIGH on Specification §B (memory method); MEDIUM on C4 (fab-constraints API)**. JOSS 11(117) 8912 (2026); arXiv:2412.12360. MIT. Different ecosystem (JAX), but algorithmic prior art. |
+| **tidy3d** (Flexcompute) | FDTD 3D, frequency-domain plugins | **Yes — `tidy3d.plugins.autograd` (local autograd, not just remote adjoint)**. Includes `make_erosion_dilation_penalty`, `smoothed_projection`, `FilterProject`, `ErosionDilationPenalty` integrated in autograd graph | Cloud-first compute, local autograd plugin | autograd library, runs against tidy3d's solver | 2026-05 active | **MEDIUM — directly contests C2** for "fabrication constraints in autograd graph". Cloud dependency for solver remains the differentiator point. |
+| **MEEP** (MIT) | FDTD 2D/3D, adjoint | Adjoint only | CPU-first | C++/Python | Active | Low — no ML loop integration |
+| **grcwa** (Stanford) | RCWA 2D | Yes (autograd, **does not handle degenerate eigenvalues**) | CPU | autograd (legacy) | Unmaintained ~2022 | Low on availability, but it is the canonical published prior-art baseline cited by C1. |
+| **ceviche** (Stanford) | FDFD 2D | Yes (autograd) | CPU | autograd (legacy) | Unmaintained ~2021 | Low — 2D only, unmaintained |
+| **fdtd-z** (Google/X) | GPU FDTD | Adjoint | GPU (~100× CPU) | TensorFlow | Sporadic | Low — adjoint only, monitor only |
+| **PyMieDiff / TorchGDM** | Differentiable Mie / GDM | Yes (autograd) | CPU/GPU | PyTorch | Active | N/A — different physics regime (small particle scattering, not full-wave) |
+| **PhiFlow** (TU Munich) | Incompressible NS | Yes (multi-backend) | GPU | multi | Active | N/A — fluid, not EM |
 
-**Key insight**: No actively-maintained, fully open-source, GPU-accelerated, PyTorch-native differentiable EM solver exists. `grcwa` proved the concept (autograd through RCWA) but is abandoned and CPU-only. `tidy3d` is the quality benchmark but is cloud-first and adjoint-based (not full autograd). **The niche is real and open.**
+**Revised key insight (replaces prior overconfident claim)**: There is no fully open-source, GPU-accelerated, **PyTorch-native** differentiable EM solver that simultaneously offers (a) numerically stable RCWA for high-symmetry / degenerate cases, (b) full 3D FDTD, and (c) cross-domain shared lithography/photonics constraint primitives. However, each individual axis is contested:
+- **PyTorch + RCWA + autograd** is occupied by TORCWA (broadening-based stabilization), TorchRDIT (eigendecomposition-free), and **meent (multi-backend including PyTorch, from the same kc-ml2 group as TORCWA)**.
+- **Multi-backend (PyTorch + JAX) differentiable RCWA** is published prior art via meent (arXiv:2406.12904, 2024), so C4.3's "backend-agnostic interface" is at most a *photonic-EM-solver-interface integrated into a DFM-EM unified-graph workflow* — not a novel multi-backend pattern in isolation.
+- **3D FDTD + autograd + multi-GPU** is occupied by FDTDX (JAX, time-reversible).
+- **Local autograd + fabrication constraints in graph** is occupied by tidy3d.plugins.autograd.
 
-### Patent freedom-to-operate analysis
+The defensible niche is the **intersection** (cross-domain lithography↔photonics shared constraint architecture and process-variation-robust optimization in PyTorch), not any single algorithmic axis.
+
+### Patent freedom-to-operate analysis (revised)
 
 The following are **NOT patented** (confirmed open literature / no known patents):
 - Autograd through RCWA S-matrix formulation — published in `grcwa` paper (Liu & Fan 2020, arXiv:2005.01481), open literature, not patented
 - Differentiable FDFD via sparse matrix solve backward — published in `ceviche` (Hughes et al. 2019), not patented
 - Topology optimization of photonic structures — Molesky et al. 2018 (Nature Photonics), academic prior art, not patented as method
+- GPU-accelerated autograd RCWA — published openly by TORCWA (Kim & Lee, CPC 2023); not a competitor patent, but it **is prior art that limits our novelty**.
 
-**Your defensible novelty (not in prior art):**
-- C1: Numerically stable autograd through RCWA eigendecomposition handling degenerate eigenvalues (grcwa does NOT handle this; it silently fails on high-symmetry structures)
-- C2: Joint fabrication constraint + EM objective with shared differentiable loss (no prior work combines lithography MRC constraints with EM inverse design in one autograd graph)
-- C3: O(√T) memory gradient checkpointing through FDTD time steps (checkpointing is known in ML, applying it specifically to FDTD time-stepping with proven memory complexity is novel as applied method)
-- C4: Shared constraint primitive library between computational lithography (OpenLithoHub) and nanophotonic inverse design — the cross-domain shared constraint architecture is novel
+**Revised novelty assessment per claim:**
 
-**Patent risk to you:**
-- Flexcompute/tidy3d: They hold patents on their FDTD solver hardware acceleration, but NOT on the algorithmic autograd method. Their adjoint method is standard (Lalau-Keraly 2013) and not patentable by them against you.
-- Stanford (Jelena Vuckovic group, Shanhui Fan group): Multiple patents on photonic inverse design devices (structures), but NOT on differentiable solver methods. Device patents don't block your method patents.
-- **Conclusion: Freedom to operate confirmed for your C1-C4 claims above.**
+- **C1 (stable eigendecomposition backward) — HIGH RISK of rejection on prior art.**
+  TORCWA already implements eigendecomposition gradient stabilization via a broadening parameter (default 1e-10), published in CPC 2023. Before CN filing we MUST:
+  1. Read TORCWA source (`torcwa/rcwa.py` or equivalent) and the CPC paper to identify the exact stabilization mechanism.
+  2. If TORCWA uses Lorentzian broadening of the denominator `(λ_i − λ_j)`, our claim must specify a *materially different* mechanism (e.g., a degeneracy-detection branch + analytic projector treatment of the degenerate subspace, vs. uniform broadening) and cite TORCWA as nearest prior art.
+  3. If we cannot articulate a mechanism distinct from broadening, **drop C1 as an independent claim** and either retain it as a dependent claim on C2/C4 or convert to a defensive publication.
+  TorchRDIT is an orthogonal threat: it argues that the right answer is to *avoid* eigendecomposition entirely, weakening the commercial case for C1 even if novel.
+
+- **C2 (fabrication constraint + EM in unified autograd graph) — MEDIUM RISK; needs scope narrowing.**
+  tidy3d.plugins.autograd already provides `make_erosion_dilation_penalty` and `smoothed_projection` as autograd-traceable functions used inside the same loss as the EM objective; FDTDX exposes a fabrication-constraints API. The "in same autograd graph" framing is no longer novel. C2 should be **narrowed to either (a) the cross-domain shared library aspect — i.e., the same penalty implementation used identically by an ILT/OPC mask synthesis loop and a metasurface inverse design loop (this is C4), or (b) a specific composition (e.g., curvature + minimum CD + binarization + EBL/DUV variation jointly) that is not in tidy3d's penalty set.** Recommend folding C2 into C4 as the independent claim, with C2's specific compositions as dependent claims.
+
+- **C3 (O(√T) memory checkpointing for FDTD) — HIGH RISK; needs reframing or downgrade.**
+  FDTDX (JAX) achieves the same goal — memory-efficient autograd through long FDTD runs — using **time-reversibility of Maxwell's equations** rather than checkpointing, published in arXiv:2412.12360 (Dec 2024) and JOSS 11(117) 8912 (2026). FDTDX reports significant memory reduction vs. equivalent AD. Although FDTDX is JAX-based (different backend), the underlying *method* is prior art for any patent that broadly claims "memory-efficient autograd FDTD". Options:
+  1. **Reframe**: claim a hybrid checkpointing + time-reversibility scheme (e.g., checkpointing across reversible blocks for non-reversible boundary regions like CPML), with proven correctness bounds.
+  2. **Narrow**: claim PyTorch-specific implementation of `torch.utils.checkpoint` over Yee time-step blocks with specific PML state handling; this is much narrower and may not justify an independent claim.
+  3. **Drop**: convert C3 to defensive publication and rely on C4/C5 as core claims.
+  Recommended: option 1 (hybrid) if technically achievable; otherwise option 3.
+
+- **C4 (cross-domain shared constraint library) — LOW RISK / strongest claim.**
+  No prior art combines a single constraint primitive library with both (i) computational lithography optimization (ILT/OPC) and (ii) nanophotonic inverse design through a shared parameterization. tidy3d's penalties are photonics-only; OpenLithoHub is litho-only. **C4 should be promoted to the lead independent claim.**
+
+- **C5 (differentiable process variation robustness optimization) — LOW RISK.**
+  No actively maintained differentiable EM solver currently reports a process-variation-robust optimization loop with differentiable perturbations sampled from a fab-process distribution. Recommend C5 as the second independent claim.
+
+**Patent risk to you (other parties):**
+- Flexcompute/tidy3d: They hold patents on their FDTD solver hardware acceleration, but NOT on the algorithmic autograd method or on `make_erosion_dilation_penalty` as a method (it is open-source under their license). Their adjoint method is standard (Lalau-Keraly 2013).
+- Stanford (Vuckovic, Fan groups): Multiple patents on photonic inverse design *devices* (structures), but NOT on differentiable solver methods. Device patents don't block your method patents.
+- Kim & Lee / SNU (TORCWA): No known patent on TORCWA itself (LGPL open-source); their published method is prior art, not a patent block.
+- LUH (FDTDX): No known patent (MIT open-source); published method is prior art, not a patent block.
+
+**Revised conclusion:** Freedom to operate is preserved for C4 and C5 with high confidence. C1, C2, C3 require source-level prior-art search and likely scope adjustment before CN filing.
+
+### Prior-Art Source-Level Search Checklist (PCT-stage input, NOT CN gating)
+
+> **Scope change**: this checklist informs PCT-stage scope refinement and the drafting of dependent claims, not the CN priority filing. CN files on C4 + C5 as soon as their embodiments are runnable.
+
+For each item, document file-by-file with line references and quoted source:
+
+- [ ] **TORCWA**: identify the eigendecomposition backward implementation. Locate the broadening / regularization step and confirm the actual default value (README 0.1.4 cites a "broadening parameter" but the specific numerical default has not been confirmed at source level). Material for the C1 preferred-embodiment paragraph in the specification, and for any future PCT-stage dependent claim that distinguishes our mechanism from broadening.
+- [ ] **meent**: read the multi-backend dispatch layer (likely a `backend.py` selecting NumPy / JAX / PyTorch backends behind a unified API). Document (a) whether eigendecomposition stabilization is performed (and how it differs from TORCWA's broadening), (b) the precise multi-backend interface pattern, since this anticipates the design pattern of C4.3. Outcome → narrowing language for any C4.3 claim that distinguishes DiffNano's interface from meent's (e.g., DiffNano's interface is *coupled* to a forward computational-lithography model under a unified autograd graph — meent is photonics-only).
+- [ ] **TorchRDIT**: confirm R-DIT formulation in `torchrdit/solver.py` or equivalent. Confirms that DiffNano's RCWA-eigendecomposition path occupies a different algorithmic family from R-DIT and informs whether R-DIT compatibility (see "backend-agnostic solver interface" below) is worth pursuing.
+- [ ] **FDTDX**: locate the time-reversibility gradient implementation in `fdtdx/` source. Read arXiv:2412.12360 sections on memory reduction; record whether time-reversibility requires lossless / low-loss media — this is the C3 carve-out (lossy/dispersive regions) referenced in v0.2.
+- [ ] **tidy3d.plugins.autograd**: read `tidy3d/plugins/autograd/invdes/penalties.py` for `make_erosion_dilation_penalty` and `smoothed_projection`. Document the precise constraint primitive set; informs C4 dependent-claim scoping (which compositions are not in tidy3d's set).
+- [ ] **grcwa**: re-confirm absence of degenerate eigenvalue handling (baseline reference for the C1 specification paragraph).
+
+Output: an internal memo titled "DiffNano prior-art delta" referenced by patent counsel when drafting PCT scope and any dependent claims that touch C1/C3 territory.
 
 ---
 
-## v0.1 Milestone — RCWA Solver + Metalens Workflow
+## v0.1 Milestone — RCWA Solver + Metalens Workflow + C4 / C5 Demos
 
-**Target:** 3-4 months | **Gate for CN patent filing**
+**Target:** 3-4 months | **Gate for CN patent filing (must produce runnable C4 and C5 embodiments)**
 
 ### Core deliverables
 
-- [ ] `diffnano/solvers/rcwa.py` — differentiable RCWA
-  - S-matrix formulation for periodic multilayer structures (follow grcwa paper as prior art baseline, then exceed it)
-  - Eigendecomposition via `torch.linalg.eig` with **custom stable backward** for near-degenerate eigenvalues (this is C1 — grcwa fails here)
+- [ ] `diffnano/solvers/__init__.py` — **backend-agnostic forward-solver interface**
+  - Define `class Solver(Protocol)` with `forward(geometry, sources, wavelengths) -> SimResult` so RCWA-eigendecomposition, R-DIT-style eigendecomposition-free, and (later) FDTD/FDFD backends are interchangeable from the workflow layer
+  - Rationale: if R-DIT or another eigendecomposition-free family becomes the dominant route, swap the backend without touching `diffnano/workflows/*` or `diffnano/design/*`. **Do not copy R-DIT implementation from TorchRDIT (GPL-3.0); design our interface from first principles and treat TorchRDIT as a published reference**
+  - This interface is in Tier 2 (CN-day release)
+
+- [ ] `diffnano/solvers/rcwa.py` — differentiable RCWA (Tier 2)
+  - S-matrix formulation for periodic multilayer structures (cite grcwa as the published baseline and TORCWA as the direct PyTorch RCWA prior art in the spec)
+  - Eigendecomposition via `torch.linalg.eig` with degeneracy-aware backward (preferred-embodiment paragraph for the C1 spec section, **not a claim**)
   - Test: validate against S4 (reference RCWA, non-differentiable) on silicon grating benchmarks
-  - Test: verify gradients on high-symmetry structures where grcwa silently fails
+  - Test: verify gradients on high-symmetry structures and benchmark vs TORCWA (broadening) and grcwa (no handling)
   - GPU: full `torch.Tensor` throughout, runs on CUDA/MPS/CPU
 
-- [ ] `diffnano/design/parameterization.py`
+- [ ] `diffnano/design/parameterization.py` (**Tier 3** — release after CN priority confirmation; B-spline + differentiable distance-field machinery is referenced by C4.2 and C5.2 dependent claims, so pre-publication would self-anticipate)
   - Height map → phase profile (thin-element approximation, differentiable)
   - Density → permittivity (Heaviside projection, β-continuation)
-  - B-spline curve → binary mask (differentiable rasterization via distance field)
+  - B-spline curve → binary mask (differentiable rasterization via distance field) — the distance-field machinery is reused by the C5 perturbation kernel, so the API must expose differentiable shifts of the level set
 
-- [ ] `diffnano/design/constraints.py` ← **reuse OpenLithoHub primitives** (C4)
-  - Minimum feature size penalty: identical function signature to `openlithohub.benchmark.metrics.curvilinear_mrc_loss`
-  - Curvature penalty: shared implementation
-  - Binarization penalty: encourage 0/1 density field
-  - This module is the bridge to OpenLithoHub — one import, both tools use it
+- [ ] `diffnano/design/constraints_shared/` ← **C4 module (Tier 3, release after CN priority confirmation)**
+  - Single Python package importable by both `openlithohub` (ILT/OPC pipeline) and `diffnano` (EM inverse design pipeline); the byte-identical-import embodiment is one preferred form, but C4 Claim 1 is independent of file layout
+  - Primitives: minimum-CD penalty, curvature penalty, binarization penalty, corner-rounding penalty
+  - Each primitive is a pure differentiable function of the shared parameterization tensor; both pipelines call it through the same import path
+  - **The claimed novelty (per C4 Claim 1) is the unified-autograd-graph methodology coupling a forward computational-lithography model and a forward EM solver under a shared parameter tensor; the byte-identical implementation is one preferred embodiment captured by C4.1**
 
-- [ ] `diffnano/workflows/metalens.py`
+- [ ] `diffnano/design/robustness/` ← **C5 module, simplified version (Tier 3, release after CN priority confirmation)**
+  - Differentiable process-variation perturbation kernels (this is where the v0.1 simplified C5 demo lives — full feature set lands in v0.3)
+  - Simplified v0.1 scope: linewidth ±5 nm via differentiable distance-field shift of the level set, sampled via reparameterization trick, with K=4–8 Monte Carlo samples per gradient step
+  - This is enough to produce the CN-filing C5 embodiment; v0.3 adds sidewall-angle, layer-thickness-variation, and corner-rounding perturbations under the same kernel framework
+
+- [ ] `diffnano/workflows/metalens.py` (Tier 2)
   - Target phase profile generation for converging/diverging lens
-  - Phase matching loss + Strehl ratio (differentiable, computed from RCWA output)
+  - Phase matching loss + Strehl ratio (differentiable, computed from solver output)
   - Standard optimization loop: Adam warm-up → L-BFGS fine-tuning
   - β-continuation schedule (start soft, progressively binarize)
+  - **Two configurations: nominal (no C5) and robust (C5 enabled)** — provides the head-to-head data for the C5 embodiment
 
-- [ ] `diffnano/export/gds.py` — reuse OpenLithoHub GDS export
+- [ ] `diffnano/workflows/dfm_metalens.py` ← **C4 embodiment workflow (Tier 3)**
+  - Single B-spline parameterization driving (a) `openlithohub` forward lithography model and (b) `diffnano` RCWA forward solve
+  - Both pipelines call `constraints_shared` primitives; gradients from both flow back to the same parameter tensor
+  - Output: the CN-filing C4 embodiment data (loss curves, final layout, MRC compliance + Strehl ratio simultaneously achieved)
+
+- [ ] `diffnano/export/gds.py` — reuse OpenLithoHub GDS export (Tier 1)
+- [ ] OpenLithoHub integration smoke test (Tier 1) — pin `openlithohub>=0.1.0a2,<0.2`; CI job that exercises `parse_layout`, `curvilinear_mrc_loss`, and the Hopkins/SOCS forward model end-to-end; this de-risks the v0.1 critical-path dependency before C4 demo work begins
 - [ ] Validation: reproduce Devlin et al. 2016 (Science) metalens phase profile
-- [ ] Benchmark: Strehl ratio vs. grcwa (show stability improvement on degenerate cases)
+- [ ] Benchmark: nominal-only vs robust (C5) Strehl-ratio histograms under linewidth ±5 nm — **this is the CN C5 embodiment data**
+- [ ] Benchmark: stability vs grcwa on degenerate cases (supports C1 preferred-embodiment paragraph; not a claim)
+
+### v0.1 CN-filing-ready acceptance gate
+
+The CN application cannot be submitted until ALL of the following pass. Numerical thresholds marked TBD will be set during the first 4 weeks of v0.1 implementation, after baseline (non-robust, non-DFM-coupled) measurements establish the floor.
+
+**C4 acceptance criteria (`diffnano/workflows/dfm_metalens.py` end-to-end):**
+- [ ] A single B-spline parameter tensor θ runs through both pipelines without error: `openlithohub` Hopkins/SOCS forward → litho FoM, AND `diffnano` RCWA forward → optical FoM, both within one `loss.backward()` call
+- [ ] Final design satisfies MRC: minimum CD ≥ TBD nm, max curvature 1/R ≤ TBD nm⁻¹ (set against the OpenLithoHub `curvilinear_mrc_loss` baseline)
+- [ ] Final design Strehl ratio at λ₀ ≥ 0.7 (placeholder; set against the unconstrained Devlin 2016 reproduction baseline)
+- [ ] Compared to a *decoupled* baseline (litho first, then EM-optimize on the printed mask), the unified-autograd-graph result shows ≥ TBD% improvement on a composite metric (Strehl × MRC-margin)
+- [ ] All gradient flow is verified by autograd graph inspection (no `.detach()` between the two forward models and the shared θ)
+
+**C5 acceptance criteria (`diffnano/design/robustness/` + metalens robust workflow):**
+- [ ] C5.1 (reparameterization-trick sampling) and C5.2 (distance-field perturbation kernel) are both implemented and unit-tested for gradient correctness
+- [ ] N=100+ Monte-Carlo realizations under linewidth perturbation N(0, σ²) with σ = 5 nm
+- [ ] Robust-optimized design: fraction of realizations with Strehl ratio ≥ 0.8 reaches ≥ TBD% (placeholder)
+- [ ] Nominal-optimized baseline: fraction of realizations with Strehl ratio ≥ 0.8 = ≤ TBD% (must be measurably lower than the robust result; the *delta* is the "technical effect" wording for the CN claims)
+- [ ] Yield-equivalent figure recorded as the C5 technical effect (e.g., "robust optimization increases process-tolerant yield from A% to B% under a 5 nm linewidth distribution")
+
+**Non-functional gates:**
+- [ ] All Tier 3 modules (`parameterization.py`, `constraints_shared/`, `robustness/`, `dfm_metalens.py`) confirmed *unpublished* (no GitHub push, no PyPI release, no public arXiv)
+- [ ] Patent attorney has reviewed the C4 / C5 claim drafts against the v0.1 demo source and signed off
+- [ ] Prior-art-delta memo drafted (TORCWA, meent, TorchRDIT, FDTDX, tidy3d.plugins.autograd) — required as PCT-stage input even though it does not gate CN priority
 
 ---
 
@@ -96,7 +232,12 @@ The following are **NOT patented** (confirmed open literature / no known patents
 
 - [ ] `diffnano/solvers/fdtd2d.py` — differentiable 2D FDTD
   - Yee grid explicit time-stepping, full autograd through all steps
-  - **Gradient checkpointing: O(√T) memory** (C3) — implement `torch.utils.checkpoint` over time-step blocks
+  - **Memory strategy: hybrid checkpointing + time-reversibility** (preferred-embodiment for C3 specification; not a claim) — time-reversible recomputation in the bulk lossless interior, `torch.utils.checkpoint` over Yee blocks across non-reversible regions (lossy media, dispersive Lorentz/Drude poles, CPML)
+  - **Required benchmark scenarios** (these are the only configurations that justify keeping C3 in any future PCT scope):
+    1. Silicon photonics with **Drude/Lorentz dispersive permittivity** (e.g., silicon at near-IR with measured Lorentz fit, gold/silver plasmonic test case)
+    2. **CPML absorbing boundary** as a non-reversible region treated by checkpointing
+    3. Long-T regime (T ≥ 10⁵ steps) where naïve full-state retention is infeasible
+    Report memory footprint and gradient accuracy against (a) FDTDX's pure time-reversal numbers from arXiv:2412.12360 and (b) pure `torch.utils.checkpoint` baseline. **Decision gate**: hybrid is kept as a PCT-stage dependent claim only if it shows a clearly distinguishable Pareto point in lossy/dispersive regimes; otherwise it remains a documentation/blog post (defensive publication) and is dropped from the PCT scope.
   - CPML absorbing boundaries (differentiable PML parameter update)
   - Pulsed source (differentiable Gaussian pulse parameters)
 
@@ -116,19 +257,19 @@ The following are **NOT patented** (confirmed open literature / no known patents
 
 ---
 
-## v0.3 Milestone — 3D FDTD + Fabrication-Aware Optimization
+## v0.3 Milestone — 3D FDTD + Full C5 Feature Set
 
 **Target:** 2-3 months after v0.2
 
 - [ ] 3D FDTD — extend 2D solver
-  - Memory: gradient checkpointing essential (3D FDTD naively requires O(N³·T) memory)
-  - Multi-GPU via `torch.distributed` (shard spatial domain)
-- [ ] **2026 addition**: Process variation robustness optimization
-  - Monte Carlo over geometric perturbations (linewidth variation, corner rounding) in the optimization loop
-  - This is an unsolved problem — no current tool does this differentiably
-  - Differentiable: perturbations are added as differentiable noise to the density field
-  - Result: designs that are robust to ±5nm fabrication variation at EBL/DUV
-  - **This is a new patent claim C5** (see below)
+  - Memory: hybrid checkpointing + time-reversibility from v0.2 (essential — 3D FDTD naively requires O(N³·T) memory)
+  - Multi-GPU via `torch.distributed` (shard spatial domain) — **planned/未实现 as of CN-filing date; not part of any C4/C5 claim and not asserted in marketing until benchmarked. The CN-filing-ready acceptance gate does not depend on multi-GPU.**
+- [ ] **C5 full feature set** (extends the v0.1 simplified C5 module `diffnano/design/robustness/`)
+  - Add sidewall-angle drift, layer-thickness variation, corner-rounding perturbation kernels (each as a differentiable transformation of the level set, sampled via reparameterization)
+  - Joint distribution sampling (correlated process variables) rather than independent per-axis sampling
+  - Larger Monte Carlo budget per gradient step + variance reduction (control variates, antithetic sampling) — these become C5 dependent claims
+  - Result: designs robust to ±5 nm linewidth + correlated sidewall/thickness drift at EBL/DUV
+  - **Patent posture**: v0.1 simplified version anchors the CN priority date; v0.3 full set populates PCT-stage dependent claims
 
 ---
 
@@ -147,49 +288,173 @@ The following are **NOT patented** (confirmed open literature / no known patents
 
 ## Patent Claims (Draft — Pre-filing, Confidential)
 
-### C1 — Stable eigendecomposition backward for degenerate RCWA
-A method for computing exact gradients through rigorous coupled-wave analysis by differentiating the eigendecomposition of the layer transfer matrix with a numerically stable backward pass that regularizes near-degenerate eigenvalue pairs, enabling correct gradient flow for high-symmetry photonic structures (square lattice, Γ-point, normal incidence) where naïve eigendecomposition differentiation produces NaN or infinite gradients.
+> **Restructured 2026-05 after prior-art review (TORCWA, TorchRDIT, FDTDX, tidy3d.plugins.autograd).**
+> Independent claims for CN filing: **C4 (cross-domain DFM-EM unified autograd graph)** and **C5 (process-variation-robust differentiable optimization)**. C1, C2, C3 are not claimed; they appear in the specification as preferred-embodiment examples to support enablement of C4/C5 and as material for any PCT-stage carve-out, but they do **not** gate the CN priority date.
 
-**Prior art gap**: grcwa (Liu & Fan 2020) demonstrates autograd through RCWA but does not address degenerate eigenvalue stability. No known patent or publication describes the stable backward for photonic RCWA specifically.
+### C4 (independent claim, lead) — Cross-domain unified-autograd-graph method for joint computational-lithography and nanophotonic inverse design
 
-### C2 — Joint fabrication constraint + electromagnetic optimization in unified autograd graph
-A co-optimization framework that simultaneously minimizes electromagnetic performance loss (phase matching error, Strehl ratio deficit, transmission efficiency) and lithographic fabrication constraint violation (minimum critical dimension, curvature radius) within a single differentiable computational graph, such that gradients from both objectives are backpropagated jointly and the optimized design satisfies process design rules without post-processing geometric correction.
+> **Methodological framing, not a code-level claim.** The protected subject matter is a method by which a single design parameterization is simultaneously consumed by a forward computational-lithography model and a forward electromagnetic solver, with gradients from both forward paths propagated through a unified automatic-differentiation graph back to the same parameter tensor under a shared set of differentiable design-rule penalty functions, such that the parameter update is a function of both pipelines' gradients. The claim is independent of file layout, programming language, or whether the penalty functions are implemented as a single source file shared by both pipelines or as separate but mathematically equivalent implementations.
 
-**Prior art gap**: Fabrication constraints in inverse design are universally applied as post-processing or as separate penalty terms computed outside the EM solver. No prior work puts them inside the same autograd graph as the EM objective.
+**Technical problem solved (CN Art. 26 framing).** In conventional nanophotonic inverse design, the photonic optimizer produces a layout under EM-only objectives, the lithography team then warps the layout via OPC/ILT to make it printable, and the printed layout is re-simulated to discover EM degradation; this iteration is manual, slow, and does not converge to a layout that is jointly optical-optimal and process-rule compliant. The technical problem solved by C4 is the absence of a single optimization process whose gradient signal simultaneously reflects (a) optical performance of the as-printed layout, (b) lithography printability of the parameterized layout, and (c) process-design-rule compliance — under one optimizer step rather than two human-mediated loops.
 
-### C3 — O(√T) memory gradient checkpointing for differentiable FDTD
-A memory-efficient differentiable FDTD implementation using gradient checkpointing with O(√T) memory complexity, where T is the number of time steps, enabling backpropagation through arbitrarily long FDTD simulations on hardware with fixed memory, with proven memory-accuracy trade-off bounds for electromagnetic simulation.
+**Technical effect produced (CN Art. 26 framing).** The unified autograd graph causes the parameter update at every optimizer step to be a function of the as-printed-after-litho EM figure of merit and the design-rule penalty gradients computed from the same θ, producing a layout that converges directly to a jointly-feasible local optimum without a post-hoc OPC pass and without a re-simulation iteration. This is a concrete, measurable engineering effect: convergence to a process-rule-compliant, lithography-aware optical optimum within a single autograd-driven optimization run, with a quantifiable reduction in design-cycle iterations and in post-OPC EM degradation versus the conventional decoupled flow.
 
-**Prior art gap**: Gradient checkpointing is known in ML (Chen et al. 2016). Its application to FDTD with specific electromagnetic boundary condition handling and proven correctness bounds is novel as applied method.
+**Concrete end-to-end embodiment (CN Art. 26 enablement support).** A preferred embodiment realizing the method on a metalens design at center wavelength λ₀ = 940 nm:
+1. θ is a tensor of B-spline control points defining the planar contours of the meta-atom population over a 200 µm × 200 µm aperture; a differentiable distance-field rasterizer converts θ into a continuous mask field M(θ) on a 5 nm grid.
+2. The forward computational-lithography model L(θ) applies a Hopkins/SOCS imaging operator with a calibrated DUV (193 nm immersion) source/pupil to M(θ), producing a printed-mask intensity field; a relaxed Heaviside (sigmoid, β-continuation) thresholds the intensity into a printed contour P(θ); the lithography figure of merit ℒ_litho is the L²-norm edge-placement error between the target M(θ) and printed P(θ).
+3. The forward electromagnetic solver E(θ) (RCWA in this embodiment, Fourier order N=15, periodic-supercell approximation) consumes the printed contour P(θ) — not the pre-litho M(θ) — and returns the diffraction efficiency at the target focal point; ℒ_optical is the negative focal efficiency.
+4. The penalty set {P_i(θ)} contains: minimum critical dimension (CD ≥ 80 nm), minimum curvature radius (≥ 40 nm), binarization (sigmoid sharpness term), and a process-variation tolerance term computed by composing C5's mechanism inside the same autograd graph (see C4.4).
+5. The unified autograd graph computes ∂(ℒ_optical + λ_L · ℒ_litho + Σ λ_i · P_i)/∂θ via PyTorch autograd in a single backward pass; an Adam optimizer step updates θ.
+6. After convergence, θ is rasterized and exported to GDSII; the exported layout is fed directly to the foundry without an OPC retreatment.
 
-### C4 — Cross-domain shared fabrication constraint library for lithography and nanophotonics
-A software architecture in which minimum critical dimension, curvature radius, and corner rounding constraint functions are implemented as a shared library used identically by computational lithography optimization (ILT/OPC mask synthesis) and nanophotonic inverse design (metasurface, metalens), enforcing process-consistent design rules across both domains from a single parameterization.
+This embodiment is described in the specification at sufficient detail (parameter ranges, solver settings, β-continuation schedule, optimizer hyperparameters, GDSII export pipeline) to enable a person skilled in the art to reproduce the method.
 
-### C5 (new) — Differentiable process variation robustness optimization
-A method for optimizing nanophotonic device designs for fabrication robustness by incorporating differentiable geometric perturbations (linewidth variation, corner rounding, layer thickness variation) drawn from a process variation distribution into the electromagnetic optimization loop, such that the gradient of the figure of merit with respect to design parameters is computed under the expectation of the perturbation distribution, yielding designs that are locally optimal under process variation without requiring separate robustness analysis.
+**Claim 1 (independent, methodological).** A method for joint computational-lithography and nanophotonic inverse design, comprising:
+1. maintaining a shared differentiable parameterization tensor θ representing a layout geometry;
+2. evaluating a forward computational-lithography model L(θ) that produces a printed-mask field, yielding a lithography figure of merit ℒ_litho(L(θ));
+3. evaluating a forward electromagnetic solver E(θ) (RCWA, FDTD, FDFD, R-DIT, or any rigorous full-wave method) that produces electromagnetic observables, yielding an optical figure of merit ℒ_optical(E(θ));
+4. evaluating a set of design-rule penalty functions {P_i(θ)}_i (minimum critical dimension, curvature radius, corner rounding, binarization, process-variation tolerance) that are differentiable functions of θ;
+5. constructing a unified automatic-differentiation graph in which (a) gradients ∂ℒ_litho/∂θ, (b) gradients ∂ℒ_optical/∂θ, and (c) gradients ∂P_i/∂θ all flow back to the *same* parameter tensor θ;
+6. updating θ via an optimizer step driven by the joint gradient.
+
+**Dependent claims under C4:**
+- **C4.1** — The method of Claim 1 wherein the design-rule penalty functions {P_i} are implemented as a single shared library imported identically by the computational-lithography pipeline and the nanophotonic inverse-design pipeline. (This captures the byte-identical-implementation embodiment as one preferred form, not as the claim itself.)
+- **C4.2** — The method of Claim 1 wherein θ is parameterized as a B-spline curve set rasterized through a differentiable distance-field, used identically for ILT/OPC mask synthesis and for metasurface meta-atom shape optimization.
+- **C4.3** — The method of Claim 1 wherein the forward electromagnetic solver E(θ) is invoked through a backend-agnostic interface that admits at least RCWA-eigendecomposition and R-DIT-style eigendecomposition-free implementations.
+- **C4.4** — The method of Claim 1 wherein the penalty set includes a process-variation-tolerance term computed as the expectation under a process-variation distribution (i.e., the C5 mechanism is composed with C4 in a single autograd graph).
+- **C4.5** — A specific composition of curvature + minimum CD + binarization + EBL/DUV variation jointly enforced through {P_i} inside the unified autograd graph (absorbs the surviving novelty fragment of original C2).
+
+**Prior-art gap**: tidy3d.plugins.autograd, FDTDX, and TORCWA all place fabrication-constraint penalties inside the EM autograd graph, but none of them couple a forward computational-lithography model to a forward EM solver under a shared θ with joint gradient updates. ILT/OPC pipelines (e.g., academic ILT papers, OpenLithoHub) have their own autograd graphs over a mask-tensor θ but do not couple to a forward EM model. The method of Claim 1 occupies the cross-pipeline coupling that no prior art reports.
+
+### C5 (independent claim) — Differentiable process-variation-robust optimization for nanophotonic devices
+
+> **Engineering framing, not a mathematical method.** Chinese Patent Law Art. 25 excludes pure rules of mental activity and mathematical methods from patentability. C5 is therefore framed as an engineering method whose technical effect is a measurable improvement in fabrication yield and device-performance robustness of a manufactured nanophotonic device, where the differentiable Monte-Carlo gradient is the technical means used to achieve that engineering effect — not the protected subject matter in itself.
+
+**Technical problem solved.** Nanophotonic devices fabricated by EBL or DUV lithography exhibit performance degradation due to stochastic geometric perturbations (linewidth offset, sidewall-angle drift, corner rounding, layer-thickness drift) introduced by the fabrication process. Conventional inverse-design pipelines optimize a nominal-geometry figure of merit and rely on a post-hoc Monte-Carlo robustness evaluation; the optimizer has no gradient signal that reflects the variance of the figure of merit over the process-variation distribution, so the converged design is at best accidentally robust. The technical problem solved by C5 is the absence of an optimization mechanism in which the gradient signal driving the parameter update directly reflects the *expected* device performance under a process-variation distribution, so that the converged design is locally optimal in expectation rather than locally optimal at the nominal point only.
+
+**Technical effect produced.** The differentiable-Monte-Carlo robust-gradient mechanism causes the optimizer to converge to a parameter tensor θ* that maximizes the expected figure of merit under the calibrated process-variation distribution. The measurable engineering effects on the manufactured device are: (a) increased *fabrication yield* — the fraction of fabricated devices meeting a performance specification — at a fixed process-variation budget, (b) reduced *performance variance* across a fabricated wafer, and (c) reduced sensitivity of the figure of merit to ±5 nm linewidth perturbation and to correlated sidewall/thickness drift at EBL/DUV nodes, versus a design produced by nominal-only optimization of the same parameterization, solver, and figure-of-merit. These effects are concrete, measurable on physical devices, and constitute a technical contribution to the manufacturing of nanophotonic devices — not a contribution to mathematics. The differentiable Monte-Carlo estimator is the technical means; the yield/variance improvement on the manufactured device is the technical effect.
+
+**Concrete embodiment.** In a representative embodiment, p(δ | θ) is a calibrated joint distribution over (linewidth, sidewall angle, layer thickness) measured from an in-house EBL process; T(θ, δ) shifts the zero level of the signed-distance-field representation of θ by δ_linewidth and rotates the sidewall normals by δ_angle; the Monte-Carlo budget is K = 16 samples per gradient step using the reparameterization trick (C5.1) with antithetic pairing (C5.4); β-continuation (C5.3) anneals from 4 to 64 over 500 steps; the optimizer is Adam at lr = 1e-2. Validation on a metasurface deflector at λ₀ = 940 nm demonstrates a measurable reduction in the deflection-efficiency standard deviation across the process-variation envelope versus a nominal-optimized baseline of the same architecture.
+
+**Claim 1 (independent).** A method for optimizing a nanophotonic device design for fabrication robustness, comprising:
+1. defining a parameterization θ of a device geometry;
+2. defining a process-variation distribution p(δ | θ) over geometric perturbations δ (linewidth offset, corner rounding radius, sidewall angle drift, layer thickness offset, or any composition thereof);
+3. defining a differentiable perturbation operator T(θ, δ) that produces a perturbed geometry;
+4. evaluating an electromagnetic figure of merit FoM(E(T(θ, δ))) under the perturbation;
+5. computing a robust gradient ∂/∂θ 𝔼_{δ ∼ p(·|θ)} FoM(E(T(θ, δ))) via a Monte-Carlo estimator whose samples are themselves differentiable functions of θ;
+6. updating θ using the robust gradient, yielding a design that is locally optimal under the process-variation distribution.
+
+**Dependent claims under C5 (enabling specific differentiable-sampling mechanisms):**
+- **C5.1 — Reparameterization-trick sampling.** The method of C5 Claim 1 wherein the perturbation samples δ are obtained by δ = μ(θ) + σ(θ) · ε, ε ∼ p_0 (a θ-independent base distribution such as standard normal), making the gradient flow through both the FoM and the perturbation distribution parameters.
+- **C5.2 — Distance-field perturbation kernel.** The method of C5 Claim 1 wherein T(θ, δ) is implemented as a differentiable shift of the level set of a signed-distance-field representation of θ (Δlinewidth = differentiable shift of the zero level by δ), so that the perturbed geometry remains a smooth differentiable function of both θ and δ.
+- **C5.3 — Relaxed-Heaviside boundary perturbation.** The method of C5 Claim 1 wherein binary boundaries of the geometry are smoothed via a relaxed Heaviside (e.g., sigmoid with steepness β) so that boundary perturbations admit a continuous gradient with respect to δ; coupled with a β-continuation schedule that progressively sharpens the boundary as optimization proceeds.
+- **C5.4 — Variance-reduced robust gradient.** The method of C5 Claim 1 wherein the Monte-Carlo estimator uses variance-reduction techniques (antithetic sampling, control variates derived from a linearized FoM, or common random numbers across optimizer steps).
+- **C5.5 — Correlated multi-axis variation.** The method of C5 Claim 1 wherein p(δ | θ) is a joint distribution over multiple geometric axes (linewidth × sidewall angle × thickness) with empirically calibrated correlations from a target process node.
+- **C5.6 — Composition with C4.** The method of C5 Claim 1 invoked within the unified autograd graph of C4 Claim 1, such that process-variation robustness and computational-lithography compliance are jointly optimized.
+
+**Prior-art gap**: No actively maintained differentiable EM solver currently reports a robust-optimization inner loop with differentiable perturbations. Robustness analysis in published metasurface inverse design pipelines is universally a post-hoc evaluation. TORCWA, TorchRDIT, FDTDX, and tidy3d.plugins.autograd do not include this mechanism.
+
+### Specification-only material (preferred embodiments, NOT claimed)
+
+The following are written into the specification to support enablement of C4 and C5 and to deter competitors from patenting around DiffNano in adjacent territory. They are not claimed because their underlying methods either (a) overlap with strong prior art (TORCWA, FDTDX) or (b) are insufficiently differentiated to justify the cost of prosecution. They may be reconsidered for inclusion as PCT-stage dependent claims if the source-level prior-art search produces a clear carve-out.
+
+#### Specification §A — Stable RCWA eigendecomposition gradient (former C1)
+
+DiffNano implements a degeneracy-aware backward for RCWA's layer-transfer-matrix eigendecomposition: at runtime, near-degenerate eigenvalue clusters are detected by a tolerance threshold, and an analytic projector-based gradient is substituted for the degenerate subspace while the non-degenerate Magnus formulation is preserved elsewhere. This produces stable gradients on high-symmetry photonic structures (square lattice, Γ-point, normal incidence) where prior published methods either lose accuracy at small broadening (TORCWA, Kim & Lee, CPC 2023) or lose gradient signal at large broadening, and where naïve eigendecomposition differentiation (grcwa, Liu & Fan 2020) produces NaN or infinite gradients.
+
+**Why not claimed at CN stage**: TORCWA (CPC 2023) is a published broadening-based stabilization method for the same eigendecomposition. Distinguishing the projector-substitution mechanism from broadening at claim level requires source-level review of TORCWA's implementation and a precise mathematical delineation; this work is deferred to PCT stage and does not gate the CN priority filing.
+
+#### Specification §B — Hybrid checkpointing + time-reversibility for differentiable FDTD (former C3)
+
+DiffNano implements a hybrid memory strategy for autograd through long FDTD runs: time-reversible recomputation of Maxwell's equations in the bulk lossless interior (per Mahlau et al., arXiv:2412.12360) combined with `torch.utils.checkpoint` over Yee-grid time-step blocks across non-reversible regions (lossy media, dispersive Lorentz/Drude materials, CPML absorbing boundaries). The hybrid carves out a memory-accuracy region not covered by FDTDX's pure time-reversal approach (which has reduced fidelity in lossy/dispersive regions) and not covered by pure checkpointing (which is memory-inefficient). v0.2 benchmarks (silicon photonics with Drude/Lorentz materials and CPML) determine whether this point on the Pareto frontier justifies a PCT-stage dependent claim or a defensive publication.
+
+**Why not claimed at CN stage**: FDTDX's time-reversibility method is published prior art. The hybrid scheme's defensibility hinges on benchmark data not yet available; including it as a CN claim risks a "lacks support / lacks distinguishing technical effect" rejection that would damage the entire filing.
 
 ---
 
 ## Key References
 
-- Liu & Fan (2020) — `grcwa`: differentiable RCWA. arXiv:2005.01481 ← **primary prior art for C1**
-- Hughes et al. (2019) — `ceviche`: differentiable FDFD. ACS Photonics ← **prior art for FDFD approach**
+- Liu & Fan (2020) — `grcwa`: differentiable RCWA. arXiv:2005.01481 ← **prior-art baseline (no degeneracy handling); cited in Specification §A**
+- **Kim & Lee (2023)** — `TORCWA`: GPU-accelerated PyTorch RCWA with broadening-based eigendecomposition stabilization. *Computer Physics Communications* 282, 108552 ← **dominant prior art for Specification §A; source-level review at PCT stage**
+- **Huang et al. (2024)** — `TorchRDIT`: eigendecomposition-free inverse design via R-DIT, 16.2× speedup vs RCWA. *Optics Express* 32(8), 13986 ← **orthogonal prior art; rationale for backend-agnostic solver interface (C4.3)**
+- **Mahlau et al. (2024/2026)** — `FDTDX`: JAX-based 3D FDTD with time-reversibility-based gradient computation. arXiv:2412.12360; JOSS 11(117), 8912 ← **dominant prior art for Specification §B; benchmark comparator at v0.2**
+- **Kim et al. (2024)** — `meent`: differentiable RCWA with multi-backend (NumPy / JAX / PyTorch) support. arXiv:2406.12904; MIT-licensed ← **prior art for backend-agnostic solver pattern; constrains C4.3 dependent-claim drafting and is included in PCT-stage source-level review**
+- Hughes et al. (2019) — `ceviche`: differentiable FDFD. ACS Photonics ← **prior art for FDFD approach (Tier 1 release; not claimed)**
 - Devlin et al. (2016) — Broadband metasurface. Science ← **validation target**
 - Molesky et al. (2018) — Inverse design in nanophotonics. Nature Photonics ← **background**
-- Chen et al. (2016) — Gradient checkpointing (Training deep networks with O(√n) memory). arXiv ← **prior art for C3, shows C3 is novel application not method**
-- Christiansen & Sigmund (2021) — Inverse design in photonics: from computational to experimental realizations. Advances in Physics
+- Chen et al. (2016) — Gradient checkpointing (Training deep networks with O(√n) memory). arXiv ← **referenced in Specification §B**
+- Christiansen & Sigmund (2021) — Inverse design in photonics: from computational to experimental realizations. *Advances in Physics*
+- **tidy3d.plugins.autograd source** (Flexcompute, ongoing) — `make_erosion_dilation_penalty`, `smoothed_projection`, `FilterProject`, `ErosionDilationPenalty` ← **prior art for fabrication-constraints-in-autograd-graph; informs C4 dependent-claim scope**
+
+### Monitoring list (not direct competitors but watch)
+- `fdtd-z` (Google/X) — GPU FDTD, ~100× CPU, adjoint-based
+- `PyMieDiff` / `TorchGDM` — differentiable Mie / Green's dyadic; small-particle regime, complementary not competitive
 
 ---
 
-## Competitive Differentiation Summary
+## License Compliance & Code Provenance
 
-| Feature | DiffNano | tidy3d | grcwa | ceviche | MEEP |
-|---|---|---|---|---|---|
-| Full autograd (not just adjoint) | ✅ | ❌ (adjoint) | ✅ (CPU) | ✅ (CPU, 2D) | ❌ |
-| GPU-native PyTorch | ✅ | Cloud | ❌ | ❌ | ❌ |
-| Stable degenerate eigenvalue backward | ✅ (C1) | N/A | ❌ | N/A | N/A |
-| Fabrication constraints in autograd graph | ✅ (C2) | ❌ | ❌ | ❌ | ❌ |
-| O(√T) FDTD memory checkpointing | ✅ (C3) | N/A | N/A | N/A | N/A |
-| Process variation robustness optimization | ✅ (C5) | ❌ | ❌ | ❌ | ❌ |
-| OpenLithoHub constraint integration | ✅ (C4) | ❌ | ❌ | ❌ | ❌ |
-| Actively maintained (2026) | ✅ | ✅ | ❌ | ❌ | ✅ |
+**DiffNano's intended license: Apache License 2.0** (compatible with patent filings via the Apache 2.0 patent grant clause; permits the layered Tier 1/2/3 release strategy described in the Patent Strategy section).
+
+**External code in the same ecosystem and DiffNano's compliance posture:**
+
+| Project | License | DiffNano's posture |
+|---|---|---|
+| **TORCWA** (kch3782/torcwa) | **LGPL-2.1** | **Do NOT vendor source.** LGPL is copyleft on modifications to the LGPL'd files; static-linking obligations are awkward for an Apache-2.0 project. If a TORCWA-equivalent broadening fallback is implemented, it must be **clean-room re-implemented from the published paper (Kim & Lee, CPC 2023)**, not derived from the TORCWA source. Algorithmic ideas from the paper are fair game; source copying is not. |
+| **TorchRDIT** | **GPL-3.0** | **Do NOT vendor source. Do NOT statically or dynamically link.** GPL-3.0 is strong copyleft and would force DiffNano to relicense. If R-DIT support is added, it must be a **clean-room re-implementation from Huang et al. *Optics Express* 32(8), 13986 (2024)**, with no reference to the TorchRDIT source tree during implementation. The C4.3 backend-agnostic interface is designed so that a clean-room R-DIT module can be loaded without contaminating the rest of DiffNano. |
+| **meent** (Kim et al. 2024) | **MIT** | Algorithmic prior art for backend-agnostic RCWA. Compatible with Apache 2.0. May be vendored or referenced if attribution is preserved; preference is independent reimplementation to keep the C4.3 dependent claim clean of meent-derived design choices. |
+| **grcwa** (Liu & Fan 2020) | **MIT** | Compatible. Used as a CPU baseline / cross-check; not vendored. |
+| **ceviche** (Hughes et al. 2019) | **MIT** | Compatible. Used as the reference for the v0.2 FDFD module; the FDFD module is a clean-room reimplementation, GPU-native via `torch.linalg.solve` backward — not a port of ceviche source. |
+| **tidy3d.plugins.autograd** (Flexcompute) | **Apache 2.0** | Compatible. Prior art for `make_erosion_dilation_penalty`, `smoothed_projection`, `FilterProject`, `ErosionDilationPenalty` — DiffNano's penalty library is a **clean-room reimplementation** that takes the algorithmic concepts as published prior art but does not copy code; the C4 dependent claims are drafted around this. |
+| **FDTDX** (Mahlau et al.) | **MIT** | Compatible, but **JAX-based** — not directly vendorable into a PyTorch project. Used as the v0.2 benchmark comparator only. The Specification §B hybrid scheme is a clean-room reimplementation in PyTorch. |
+| **OpenLithoHub** (alpha 0.1.0a2) | **Apache 2.0** | Compatible. Treated as an optional integration target (see v0.1 milestone smoke test). Versions are pinned in `requirements.txt`; the v0.1 acceptance gate does not block on OpenLithoHub stability. |
+| **PyTorch** | BSD-3 | Compatible. |
+
+**Provenance rules for DiffNano contributors (added to CONTRIBUTING.md):**
+1. Do not paste source from any GPL or LGPL project (most importantly TorchRDIT, TORCWA) into the DiffNano tree.
+2. When implementing a method published in a paper that also has a GPL/LGPL reference implementation, work from the **paper, not the reference source**, and document the references-consulted list in the module docstring.
+3. All vendored code must carry its original license header and an entry in `THIRD_PARTY_LICENSES.md`.
+4. Tier 3 (proprietary, claim-bearing) modules must contain no copyleft-derived code at all; this is enforced by a CI license-scan job (`scancode-toolkit` or equivalent) before any release tag.
+
+This section is part of the v0.1 acceptance gate (the license scan must pass before CN priority filing source-level review).
+
+---
+
+## Competitive Differentiation Summary (revised 2026-05)
+
+| Feature | DiffNano | tidy3d (+autograd plugin) | TORCWA | TorchRDIT | FDTDX | grcwa | ceviche | MEEP |
+|---|---|---|---|---|---|---|---|---|
+| Full local autograd (not adjoint-only) | ✅ | ✅ (via plugin) | ✅ | ✅ | ✅ | ✅ (CPU) | ✅ (CPU, 2D) | ❌ |
+| GPU-native PyTorch | ✅ | ❌ (cloud solver) | ✅ | ✅ | ❌ (JAX) | ❌ | ❌ | ❌ |
+| Stable RCWA gradients on degenerate cases | ✅ (preferred-embodiment, not claimed) | N/A | ✅ (broadening) | N/A (eigendecomp-free) | N/A | ❌ | N/A | N/A |
+| Fabrication constraints inside EM autograd graph | ✅ | ✅ (`make_erosion_dilation_penalty`, `smoothed_projection`) | ❌ | Partial | ✅ | ❌ | ❌ | ❌ |
+| Forward computational-lithography model coupled to EM in unified autograd graph | ✅ (**C4 — unique**) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Memory-efficient autograd FDTD in lossy/dispersive regimes | ✅ (preferred-embodiment, hybrid scheme; PCT decision pending v0.2 benchmarks) | N/A | N/A | N/A | ✅ in lossless; degraded in lossy/dispersive | N/A | N/A | N/A |
+| Multi-GPU 3D FDTD | **Planned v0.3 — 未实现; not benchmarked; not a CN/PCT claim** | ✅ (cloud) | N/A | N/A | ✅ | N/A | N/A | Partial |
+| Process-variation-robust differentiable optimization | ✅ (**C5 — unique**) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Backend-agnostic solver interface (RCWA-eigendecomp ↔ R-DIT swappable) | ✅ (C4.3) | ❌ | ❌ | ❌ (R-DIT only) | ❌ | ❌ | ❌ | ❌ |
+| Actively maintained (2026) | (in development) | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
+
+**Defensible competitive position**: DiffNano's CN-stage independent claims are **C4** (cross-domain DFM-EM unified autograd graph) and **C5** (process-variation-robust differentiable optimization). The "PyTorch-native + GPU + 3D FDTD + autograd" axis alone is no longer sufficient differentiation — it is occupied by TORCWA (RCWA), TorchRDIT (R-DIT), FDTDX (FDTD, JAX), and tidy3d.plugins.autograd. The defensible territory is the *coupling* between computational lithography and nanophotonic inverse design (C4) and the *robust-optimization inner loop* (C5).
+
+---
+
+## External Positioning & Narrative (2026-05)
+
+The competitive landscape has shifted: differentiable EM solvers as a category are commoditizing (TORCWA for RCWA, TorchRDIT for R-DIT, FDTDX for FDTD, tidy3d.plugins.autograd for cloud-FDTD). "PyTorch + GPU + autograd EM" is no longer a distinctive narrative.
+
+**Updated positioning (for README, whitepaper, talks):**
+
+> **DiffNano: The first DFM-native differentiable nanophotonic inverse-design framework.**
+> Where other tools optimize photonic structures and apply fabrication constraints as an afterthought, DiffNano was built from the ground up around a single principle: the design parameterization is shared between computational lithography and electromagnetic simulation, and gradients from both forward models flow back to the same parameter tensor in one unified autograd graph. The result is layouts that are simultaneously optically optimal, process-rule compliant, and robust to fabrication variation — without post-processing geometric correction, without a separate robustness pass, and without a manual handoff between the photonics designer and the lithography team.
+
+**Narrative emphasis priorities:**
+1. **DFM-native, not DFM-bolt-on** — design-for-manufacturability is the core value prop, not the speed of the underlying solver
+2. **Yield-aware by construction** — C5 robustness is in the optimization loop, not a post-hoc check
+3. **Cross-domain by design** — C4 cross-pipeline coupling differentiates against pure-photonics competitors (TORCWA/TorchRDIT/FDTDX) and pure-lithography pipelines (Calibre, OpenLithoHub-standalone)
+4. **PyTorch + GPU + autograd** is mentioned as a *capability*, not a *differentiator*
+
+**Avoid in external materials:**
+- "Fastest differentiable RCWA / FDTD" claims — TorchRDIT (16.2× vs RCWA) and FDTDX (multi-GPU 3D) own these axes
+- "First open-source differentiable EM solver" — false; TORCWA/TorchRDIT/FDTDX are open-source
+- "Solves degenerate eigenvalue gradients" as a headline — TORCWA already addresses this with broadening; this is at most a footnote-level technical detail

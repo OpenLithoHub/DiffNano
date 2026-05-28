@@ -14,3 +14,6 @@ build/
 
 # OS
 .DS_Store
+
+# macOS Apple Double files
+._*
