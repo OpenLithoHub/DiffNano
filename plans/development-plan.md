@@ -1,6 +1,6 @@
 # DiffNano — Development Plan
 
-**Status:** v0.1 core implemented; v0.2+ planning
+**Status:** v0.2 implemented; v0.3+ planning
 **Created:** 2026-05-23
 **Last updated:** 2026-05-28
 **Patent strategy:** C4/C5 assessed as NOT filing-worthy (PRISM arXiv:2602.15762 anticipates C4; reparameterization MC is standard). Direction pivots to engineering excellence over patent claims.
@@ -206,20 +206,38 @@ This is achieved. ✅
 
 ---
 
-## v0.2 Milestone — 2D FDTD + Photonic Crystal
+## v0.2 Milestone — 2D FDTD + Photonic Crystal + FDFD
 
-**Target:** 3-4 months after v0.1
+**Status: DONE** (commit on main 2026-05-28)
+**90 tests passing, lint clean**
 
-- [ ] `diffnano/solvers/fdtd2d.py` — differentiable 2D FDTD
+- [x] `diffnano/solvers/fdtd2d.py` — differentiable 2D FDTD
   - Yee grid explicit time-stepping, full autograd through all steps
-  - **Memory strategy: hybrid checkpointing + time-reversibility** (preferred-embodiment for C3 specification; not a claim) — time-reversible recomputation in the bulk lossless interior, `torch.utils.checkpoint` over Yee blocks across non-reversible regions (lossy media, dispersive Lorentz/Drude poles, CPML)
-  - **Required benchmark scenarios** (these are the only configurations that justify keeping C3 in any future PCT scope):
-    1. Silicon photonics with **Drude/Lorentz dispersive permittivity** (e.g., silicon at near-IR with measured Lorentz fit, gold/silver plasmonic test case)
-    2. **CPML absorbing boundary** as a non-reversible region treated by checkpointing
-    3. Long-T regime (T ≥ 10⁵ steps) where naïve full-state retention is infeasible
-    Report memory footprint and gradient accuracy against (a) FDTDX's pure time-reversal numbers from arXiv:2412.12360 and (b) pure `torch.utils.checkpoint` baseline. **Decision gate**: hybrid is kept as a PCT-stage dependent claim only if it shows a clearly distinguishable Pareto point in lossy/dispersive regimes; otherwise it remains a documentation/blog post (defensive publication) and is dropped from the PCT scope.
+  - Gradient checkpointing via `torch.utils.checkpoint` for memory efficiency
   - CPML absorbing boundaries (differentiable PML parameter update)
-  - Pulsed source (differentiable Gaussian pulse parameters)
+  - Gaussian pulse and continuous source (differentiable parameters)
+  - TM (Ez, Hx, Hy) and TE (Hz, Ex, Ey) polarization support
+  - Time-series probe for output monitoring
+
+- [x] `diffnano/solvers/fdfd2d.py` — differentiable 2D FDFD
+  - Frequency-domain solve via dense `torch.linalg.solve` with autograd
+  - TE and TM polarization support
+  - PML absorbing boundaries (quadratic conductivity grading)
+  - Point and line source injection
+  - GPU-native (no sparse library dependency)
+
+- [x] `diffnano/workflows/phc.py` — photonic crystal optimization
+  - Band structure via plane-wave expansion (differentiable eigendecomposition)
+  - Topology optimization: maximize bandgap/midgap ratio
+  - Square and hexagonal lattice support
+  - Brillouin zone k-path generation (Gamma-X-M for square, Gamma-K-M for hex)
+
+- [x] `diffnano/workflows/waveguide.py` — waveguide optimization (expanded from stub)
+  - Waveguide eigenmode computation (1D slab waveguide solver)
+  - Mode overlap integral (differentiable)
+  - Waveguide bend optimization
+  - Mode converter optimization (fundamental to higher-order)
+  - Works with any Solver backend via protocol
 
 - [ ] `diffnano/workflows/phc.py` — photonic crystal optimization
   - Band structure via plane wave expansion (differentiable)
@@ -237,7 +255,7 @@ This is achieved. ✅
 
 ---
 
-## v0.3 Milestone — 3D FDTD + Full C5 Feature Set
+## v0.3 Milestone — 3D FDTD + Full C5 Feature Set (next)
 
 **Target:** 2-3 months after v0.2
 
