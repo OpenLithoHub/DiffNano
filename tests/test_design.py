@@ -20,6 +20,7 @@ from diffnano.design.projection import (
     heaviside_projection,
     smooth_filter,
 )
+from diffnano.design.curvilinear import CurvilinearMask, dvas_boundary
 
 
 class TestHeightMap:
@@ -185,3 +186,75 @@ class TestConstraints:
         )
         p2 = binarization_penalty(d)
         assert p1.item() == pytest.approx(p2.item(), rel=1e-3)
+
+
+# -----------------------------------------------------------------------
+# Curvilinear Mask (C8)
+# -----------------------------------------------------------------------
+
+
+class TestCurvilinearMask:
+    @pytest.fixture
+    def cmask(self):
+        return CurvilinearMask(
+            grid_shape=(20, 20),
+            pixel_size_nm=5.0,
+            n_eval=30,
+            beta=10.0,
+        )
+
+    def test_rasterize_shape(self, cmask):
+        cp = torch.tensor([
+            [25.0, 50.0], [50.0, 25.0], [75.0, 50.0], [50.0, 75.0],
+        ], dtype=torch.float64)
+        mask = cmask.forward(cp)
+        assert mask.shape == (20, 20)
+        assert mask.min() >= 0.0
+        assert mask.max() <= 1.0
+
+    def test_gradient_flow(self, cmask):
+        cp = torch.tensor([
+            [25.0, 50.0], [50.0, 25.0], [75.0, 50.0], [50.0, 75.0],
+        ], dtype=torch.float64, requires_grad=True)
+        mask = cmask.forward(cp)
+        mask.sum().backward()
+        assert cp.grad is not None
+        assert not torch.isnan(cp.grad).any(), "NaN gradient detected in CurvilinearMask"
+
+    def test_sdf_output(self, cmask):
+        cp = torch.tensor([
+            [25.0, 50.0], [50.0, 25.0], [75.0, 50.0], [50.0, 75.0],
+        ], dtype=torch.float64)
+        sdf = cmask.sdf(cp)
+        assert sdf.shape == (20, 20)
+
+    def test_shift_parameter(self, cmask):
+        cp = torch.tensor([
+            [25.0, 50.0], [50.0, 25.0], [75.0, 50.0], [50.0, 75.0],
+        ], dtype=torch.float64)
+        mask1 = cmask.forward(cp, beta=5.0)
+        mask2 = cmask.forward(cp, shift=torch.tensor(2.0, dtype=torch.float64), beta=5.0)
+        assert not torch.allclose(mask1, mask2, atol=1e-3)
+
+    def test_optimize(self, cmask):
+        def loss_fn(mask):
+            return -mask.mean() + ((mask - 0.5) ** 2).mean()
+
+        cp, history = cmask.optimize(
+            n_control_points=4, loss_fn=loss_fn, n_steps=5, lr=0.01, verbose=False,
+        )
+        assert cp.shape == (4, 2)
+        assert len(history) == 5
+
+
+class TestDVASBoundary:
+    def test_basic(self):
+        dist = torch.tensor([3.0, 4.0, 3.0, 4.0], dtype=torch.float64)
+        pts = dvas_boundary(4, dist, center_angle=None)
+        assert pts.shape == (4, 2)
+
+    def test_gradient(self):
+        dist = torch.tensor([3.0, 4.0, 3.0, 4.0], dtype=torch.float64, requires_grad=True)
+        pts = dvas_boundary(4, dist, center_angle=None)
+        pts.sum().backward()
+        assert dist.grad is not None

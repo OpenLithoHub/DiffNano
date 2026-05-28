@@ -5,6 +5,8 @@ import torch
 
 from diffnano.solvers import FDFDSolver2D, FDTDSolver2D, FDTDSolver3D, RCWASolver, SimResult, Solver
 from diffnano.solvers.surrogate import NeuralSurrogate
+from diffnano.solvers.fab_model import LearnedFabModel
+from diffnano.solvers.resist import DifferentiableResistModel
 
 
 class TestSimResult:
@@ -381,3 +383,82 @@ class TestNeuralSurrogate:
         metrics = surrogate.accuracy(n_test=5, geometry_shape=(3, 10))
         assert "mean_max_rel_error" in metrics
         assert "worst_max_rel_error" in metrics
+
+
+# -----------------------------------------------------------------------
+# Learned Fabrication Model (C6)
+# -----------------------------------------------------------------------
+
+
+class TestLearnedFabModel:
+    def test_forward_shape(self):
+        model = LearnedFabModel(grid_shape=(16, 16), hidden_channels=8, n_blocks=2)
+        mask = torch.rand(16, 16, dtype=torch.float64)
+        result = model.forward(mask)
+        assert isinstance(result, SimResult)
+        assert result.field.shape == (1, 16, 16)
+
+    def test_output_range(self):
+        model = LearnedFabModel(grid_shape=(10, 10), hidden_channels=8, n_blocks=2)
+        mask = torch.rand(10, 10, dtype=torch.float64)
+        result = model.forward(mask)
+        assert result.field.min() >= 0.0
+        assert result.field.max() <= 1.0
+
+    def test_train_and_predict(self):
+        model = LearnedFabModel(grid_shape=(10, 10), hidden_channels=8, n_blocks=2)
+        data = model.generate_synthetic_data(n_samples=5)
+        loss_history = model.train_model(data, n_epochs=3, verbose=False)
+        assert len(loss_history) == 3
+        assert model._trained
+
+    def test_gradient_flow(self):
+        model = LearnedFabModel(grid_shape=(10, 10), hidden_channels=8, n_blocks=2)
+        mask = torch.rand(10, 10, dtype=torch.float64, requires_grad=True)
+        result = model.forward(mask)
+        result.field.sum().backward()
+        assert mask.grad is not None
+
+
+class TestDifferentiableResistModel:
+    def test_forward_shape(self):
+        model = DifferentiableResistModel(grid_shape=(16, 16))
+        dose = torch.rand(16, 16, dtype=torch.float64)
+        result = model.forward(dose)
+        assert isinstance(result, SimResult)
+        assert result.field.shape == (1, 16, 16)
+
+    def test_output_range(self):
+        model = DifferentiableResistModel(grid_shape=(10, 10))
+        dose = torch.rand(10, 10, dtype=torch.float64)
+        result = model.forward(dose)
+        assert result.field.min() >= 0.0
+        assert result.field.max() <= 1.0
+
+    def test_metadata(self):
+        model = DifferentiableResistModel(grid_shape=(10, 10))
+        dose = torch.rand(10, 10, dtype=torch.float64)
+        result = model.forward(dose)
+        assert result.metadata["model"] == "resist"
+        assert "acid_diffusion_nm" in result.metadata
+
+    def test_parameters(self):
+        model = DifferentiableResistModel(grid_shape=(10, 10))
+        params = model.parameters()
+        assert len(params) == 4
+
+    def test_gradient_flow(self):
+        model = DifferentiableResistModel(grid_shape=(10, 10))
+        dose = torch.rand(10, 10, dtype=torch.float64, requires_grad=True)
+        result = model.forward(dose)
+        result.field.sum().backward()
+        assert dose.grad is not None
+
+    def test_calibrate(self):
+        model = DifferentiableResistModel(grid_shape=(8, 8), peb_diffusion_nm=5.0)
+        dose = torch.rand(8, 8, dtype=torch.float64)
+        target = model.forward(dose).field.squeeze(0)
+        loss_history = model.calibrate(
+            [(dose, target)], n_steps=3, lr=0.01, verbose=False,
+        )
+        assert len(loss_history) == 3
