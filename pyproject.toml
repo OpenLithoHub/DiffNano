@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cuda = ["torch>=2.0+cu121"]
+cuda = ["torch>=2.0"]
 mps = ["torch>=2.0"]
 export = ["gdstk>=0.9"]
 viz = ["matplotlib>=3.7"]
