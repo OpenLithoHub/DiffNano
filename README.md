@@ -8,9 +8,29 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-Bring PyTorch autograd to electromagnetic simulation — gradient-based inverse design of metasurfaces, metalenses, photonic crystals, and waveguide components **without writing a single adjoint equation by hand**.
+Gradient-based inverse design of nanophotonic devices with differentiable electromagnetic solvers built in PyTorch.
+
+> **Note:** DiffNano is an early-stage personal research project. It is not production-validated and has no external users yet. The Roadmap reflects the author's learning trajectory, not shipped software.
 
 </div>
+
+---
+
+## Prior Art and How DiffNano Differs
+
+Differentiable electromagnetic simulation is an active field with strong existing tools. DiffNano is a personal learning project, not a claim of novelty. Key prior work:
+
+| Tool | Method | Autograd | Notes |
+|:-----|:-------|:--------|:------|
+| [MEEP](https://meep.readthedocs.io/) | FDTD | Yes (via meep-autograd / custom adjoint) | Mature, production-grade, C++ core + Python |
+| [Tidy3D](https://tidy3d.simulation.cloud/) | FDTD | Yes (autograd-native) | Commercial, GPU-accelerated, widely adopted |
+| [Ceviche](https://github.com/tigh-ff/ceviche) | FDTD / FDFD | Yes (JAX) | Open-source, photonic inverse design benchmark |
+| [TorchMeep](https://github.com/tigh-ff/torchmeep) | FDTD | Yes (PyTorch) | PyTorch wrapper around MEEP |
+| [Lumerical](https://www.ansys.com/products/photonics) | FDTD / RCWA | Adjoint | Commercial, industry standard |
+| [SPINS](https://github.com/stanfordnlp/spins) | FDTD / FDFD | Yes | Stanford, topology optimization |
+| [Inkstone](https://github.com/tigh-ff/inkstone) | RCWA | Yes | Berkeley, open-source |
+
+DiffNano was built to learn how these solvers work by reimplementing them from scratch in PyTorch. It is not faster, more accurate, or more capable than the tools above.
 
 ---
 
@@ -132,13 +152,13 @@ diffnano/
 
 | Version | Scope | Status |
 |:--------|:------|:-------|
-| v0.1 | RCWA + metalens + DFM + robust MC | Done |
-| v0.2 | 2D FDTD + photonic crystal + FDFD | Done |
-| v0.3 | 3D FDTD + adaptive robust optimization | Done |
-| v0.4 | Neural surrogate + broadband | Done |
-| v0.5 | Learned fabrication model + curvilinear masks | Done |
-| v0.6 | Multi-objective Pareto + end-to-end + VAE | Done |
-| v1.0 | Full benchmark suite + arXiv paper | Planned |
+| v0.1 | RCWA solver + metalens workflow | Done |
+| v0.2 | 2D FDTD + photonic crystal + FDFD | Code exists, validation pending |
+| v0.3 | 3D FDTD + adaptive robust optimization | Code exists, validation pending |
+| v0.4 | Neural surrogate + broadband | Early prototype |
+| v0.5 | Learned fabrication model + curvilinear masks | Experimental |
+| v0.6 | Multi-objective Pareto + end-to-end + VAE | Experimental |
+| v1.0 | Full benchmark suite + validation + arXiv paper | Planned |
 
 ---
 
