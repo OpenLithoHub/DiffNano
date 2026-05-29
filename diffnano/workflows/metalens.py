@@ -4,7 +4,9 @@ Provides:
 - Target phase profile generation for converging/diverging lenses
 - Phase matching loss + Strehl ratio (differentiable)
 - Standard optimization loop: Adam warm-up → L-BFGS fine-tuning
-- β-continuation schedule
+- Progressive β-continuation schedule during Adam phase
+- Optional designable-mask support for freezing fixed regions
+- Hybrid Z-score convergence monitoring
 
 Two configurations: nominal (no C5) and robust (C5 enabled).
 
@@ -17,7 +19,10 @@ import math
 
 import torch
 
+from diffnano.design.designable_mask import DesignableMask, apply_mask
+from diffnano.design.projection import beta_continuation_schedule
 from diffnano.solvers.rcwa import RCWASolver
+from diffnano.utils.convergence import ConvergenceMonitor
 
 __all__ = ["MetalensDesigner"]
 
@@ -172,10 +177,14 @@ class MetalensDesigner:
         n_steps: int = 500,
         lr: float = 1e-3,
         beta_schedule: bool = True,
+        beta_start: float = 1.0,
+        beta_end: float = 64.0,
         optimizer: str = "adam",
         robust: bool = False,
         sigma_nm: float = 5.0,
         n_mc_samples: int = 8,
+        designable_mask: DesignableMask | None = None,
+        convergence_monitor: ConvergenceMonitor | None = None,
         verbose: bool = True,
     ) -> tuple[torch.Tensor, list[float]]:
         """Run the metalens optimization loop.
@@ -187,7 +196,11 @@ class MetalensDesigner:
         lr : float
             Learning rate.
         beta_schedule : bool
-            Apply β-continuation for binarization.
+            Apply progressive β-continuation during Adam phase.
+        beta_start : float
+            Initial β (soft projection, default 1.0).
+        beta_end : float
+            Final β (near-binary, default 64.0).
         optimizer : str
             "adam" or "lbfgs".
         robust : bool
@@ -196,6 +209,10 @@ class MetalensDesigner:
             Process variation σ for robust mode.
         n_mc_samples : int
             Monte Carlo samples for robust mode.
+        designable_mask : DesignableMask, optional
+            Restrict gradient updates to designable pixels only.
+        convergence_monitor : ConvergenceMonitor, optional
+            Monitor convergence; if None a default one is created.
         verbose : bool
 
         Returns
@@ -214,9 +231,22 @@ class MetalensDesigner:
 
         opt = torch.optim.Adam([height_map], lr=lr)
 
+        if convergence_monitor is None:
+            convergence_monitor = ConvergenceMonitor(
+                patience=10, z_threshold=0.3, window=max(10, min(50, n_steps // 4)),
+            )
+
         loss_history = []
 
         for step in range(n_steps):
+            # Progressive beta-continuation: start soft, sharpen over time
+            if beta_schedule:
+                beta = beta_continuation_schedule(
+                    step, n_steps, beta_start=beta_start, beta_end=beta_end,
+                )
+            else:
+                beta = beta_end
+
             if robust:
                 from diffnano.design.robustness import robust_gradient_step
 
@@ -234,13 +264,41 @@ class MetalensDesigner:
 
             opt.zero_grad()
             loss.backward()
+
+            # Zero out gradients for frozen pixels
+            if designable_mask is not None and height_map.grad is not None:
+                height_map.grad = apply_mask(height_map.grad, designable_mask)
+
             opt.step()
 
-            loss_history.append(loss.item())
+            loss_val = loss.item()
+            loss_history.append(loss_val)
+
+            # Convergence monitoring
+            info = convergence_monitor.step(loss_val)
+            if info["should_stop"]:
+                if verbose:
+                    print(
+                        f"Step {step:4d}: converged "
+                        f"(z={info['z_score']:.4f}, loss={loss_val:.6f})"
+                    )
+                break
+
+            if info["should_decay_lr"]:
+                for pg in opt.param_groups:
+                    pg["lr"] *= convergence_monitor.lr_decay_factor
+                if verbose:
+                    print(
+                        f"Step {step:4d}: stalled, decaying LR to "
+                        f"{opt.param_groups[0]['lr']:.2e}"
+                    )
 
             if verbose and step % 50 == 0:
                 strehl = self.strehl_ratio(height_map.detach()).item()
-                print(f"Step {step:4d}: loss={loss.item():.6f}, Strehl={strehl:.4f}")
+                print(
+                    f"Step {step:4d}: loss={loss_val:.6f}, "
+                    f"Strehl={strehl:.4f}, beta={beta:.1f}"
+                )
 
         return height_map.detach(), loss_history
 
