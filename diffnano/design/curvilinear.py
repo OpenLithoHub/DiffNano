@@ -50,8 +50,11 @@ def dvas_boundary(
     """
     if center_angle is None:
         center_angle = torch.linspace(
-            0, 2 * math.pi, n_points + 1,
-            device=center_distance.device, dtype=center_distance.dtype,
+            0,
+            2 * math.pi,
+            n_points + 1,
+            device=center_distance.device,
+            dtype=center_distance.dtype,
         )[:-1]
 
     x = center_distance * torch.cos(center_angle)
@@ -129,9 +132,9 @@ class CurvilinearMask:
         f = fracs.unsqueeze(-1)
         curve = (
             (1 - f) ** 3 / 6 * p0
-            + (3 * f ** 3 - 6 * f ** 2 + 4) / 6 * p1
-            + (-3 * f ** 3 + 3 * f ** 2 + 3 * f + 1) / 6 * p2
-            + f ** 3 / 6 * p3
+            + (3 * f**3 - 6 * f**2 + 4) / 6 * p1
+            + (-3 * f**3 + 3 * f**2 + 3 * f + 1) / 6 * p2
+            + f**3 / 6 * p3
         )
         return curve
 
@@ -225,8 +228,11 @@ class CurvilinearMask:
     ) -> torch.Tensor:
         """Return the raw signed distance field."""
         t = torch.linspace(
-            0, 1, self.n_eval,
-            device=control_points.device, dtype=control_points.dtype,
+            0,
+            1,
+            self.n_eval,
+            device=control_points.device,
+            dtype=control_points.dtype,
         )
         curve = self._eval_bspline(control_points, t)
         return self._compute_sdf(curve)
@@ -263,17 +269,24 @@ class CurvilinearMask:
 
         # Initialize as circle
         angles = torch.linspace(
-            0, 2 * math.pi, n_control_points + 1,
-            device=self._device, dtype=torch.float64,
+            0,
+            2 * math.pi,
+            n_control_points + 1,
+            device=self._device,
+            dtype=torch.float64,
         )[:-1]
-        init_pts = torch.stack([
-            center_x + radius * torch.cos(angles),
-            center_y + radius * torch.sin(angles),
-        ], dim=-1)
+        init_pts = torch.stack(
+            [
+                center_x + radius * torch.cos(angles),
+                center_y + radius * torch.sin(angles),
+            ],
+            dim=-1,
+        )
 
         control_points = init_pts.detach().requires_grad_(True)
 
         if loss_fn is None:
+
             def loss_fn(mask):
                 return -mask.mean() + ((mask - 0.5) ** 2).mean()
 

@@ -14,10 +14,18 @@ import torch
 from diffnano.solvers._result import SimResult
 
 __all__ = [
-    "Solver", "SimResult", "RCWASolver", "FDFDSolver2D",
-    "FDTDSolver2D", "FDTDSolver3D", "NeuralSurrogate",
-    "HopkinsLithoModel", "LearnedFabModel", "DifferentiableResistModel",
-    "gmres_matfree", "fdfd_fixed_point_gradient",
+    "Solver",
+    "SimResult",
+    "RCWASolver",
+    "FDFDSolver2D",
+    "FDTDSolver2D",
+    "FDTDSolver3D",
+    "NeuralSurrogate",
+    "HopkinsLithoModel",
+    "LearnedFabModel",
+    "DifferentiableResistModel",
+    "gmres_matfree",
+    "fdfd_fixed_point_gradient",
 ]
 
 
@@ -63,32 +71,42 @@ class Solver(Protocol):
 def __getattr__(name):
     if name == "RCWASolver":
         from diffnano.solvers.rcwa import RCWASolver
+
         return RCWASolver
     if name == "FDFDSolver2D":
         from diffnano.solvers.fdfd2d import FDFDSolver2D
+
         return FDFDSolver2D
     if name == "FDTDSolver2D":
         from diffnano.solvers.fdtd2d import FDTDSolver2D
+
         return FDTDSolver2D
     if name == "FDTDSolver3D":
         from diffnano.solvers.fdtd3d import FDTDSolver3D
+
         return FDTDSolver3D
     if name == "NeuralSurrogate":
         from diffnano.solvers.surrogate import NeuralSurrogate
+
         return NeuralSurrogate
     if name == "HopkinsLithoModel":
         from diffnano.solvers.litho import HopkinsLithoModel
+
         return HopkinsLithoModel
     if name == "LearnedFabModel":
         from diffnano.solvers.fab_model import LearnedFabModel
+
         return LearnedFabModel
     if name == "DifferentiableResistModel":
         from diffnano.solvers.resist import DifferentiableResistModel
+
         return DifferentiableResistModel
     if name == "gmres_matfree":
         from diffnano.solvers.implicit_diff import gmres_matfree
+
         return gmres_matfree
     if name == "fdfd_fixed_point_gradient":
         from diffnano.solvers.implicit_diff import fdfd_fixed_point_gradient
+
         return fdfd_fixed_point_gradient
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

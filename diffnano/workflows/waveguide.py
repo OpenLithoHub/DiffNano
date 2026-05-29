@@ -62,13 +62,13 @@ def _waveguide_mode_1d(
     D2 = torch.diag(diag_main) + torch.diag(diag_off, 1) + torch.diag(diag_off, -1)
 
     # Eigenvalue problem: (D2 + k0^2 * diag(eps)) E = beta^2 * E
-    M = D2 + k0 ** 2 * torch.diag(eps_r)
+    M = D2 + k0**2 * torch.diag(eps_r)
 
     eigenvalues, eigenvectors = torch.linalg.eigh(M)
 
     # beta^2 = eigenvalue, n_eff^2 = beta^2 / k0^2
     beta_sq = eigenvalues
-    n_eff_sq = beta_sq / (k0 ** 2)
+    n_eff_sq = beta_sq / (k0**2)
     n_eff = torch.sqrt(torch.clamp(n_eff_sq, min=0.0))
 
     # Sort by decreasing n_eff (guided modes first)
@@ -156,8 +156,8 @@ class WaveguideDesigner:
         eps_r : Tensor, shape ``(H, W)``
         """
         H, W = self.grid_shape
-        eps_clad = self.n_clad ** 2
-        eps_core = self.n_core ** 2
+        eps_clad = self.n_clad**2
+        eps_core = self.n_core**2
 
         width_px = int(self.waveguide_width_nm / self.dl)
         center_y = H // 2 + y_offset
@@ -199,7 +199,10 @@ class WaveguideDesigner:
         eps_1d = eps_r.mean(dim=1)  # (W,) — cross-section perpendicular to propagation
 
         n_effs, modes_1d = _waveguide_mode_1d(
-            eps_1d, self.wavelength_nm, dl=self.dl, n_modes=1,
+            eps_1d,
+            self.wavelength_nm,
+            dl=self.dl,
+            n_modes=1,
         )
 
         # Expand to 2D by replicating
@@ -324,9 +327,7 @@ class WaveguideDesigner:
 
             # Build full geometry with design region
             eps_r = self.waveguide_eps()
-            eps_r[y0:y1, x0:x1] = self.n_clad ** 2 + (
-                self.n_core ** 2 - self.n_clad ** 2
-            ) * projected
+            eps_r[y0:y1, x0:x1] = self.n_clad**2 + (self.n_core**2 - self.n_clad**2) * projected
 
             if self.solver is not None:
                 result = self.solver.forward(
@@ -431,9 +432,7 @@ class WaveguideDesigner:
             projected = heaviside_projection(density, beta=beta)
 
             eps_r = self.waveguide_eps()
-            eps_r[y0:y1, x0:x1] = self.n_clad ** 2 + (
-                self.n_core ** 2 - self.n_clad ** 2
-            ) * projected
+            eps_r[y0:y1, x0:x1] = self.n_clad**2 + (self.n_core**2 - self.n_clad**2) * projected
 
             _, output_field = self.fundamental_mode(eps_r)
 

@@ -65,7 +65,7 @@ def minimum_cd_penalty(
     orig_2d = density.reshape(-1, *density.shape[-2:])
     opened_2d = opened.reshape(-1, *opened.shape[-2:])
     diff = orig_2d - opened_2d
-    return (diff ** 2).mean()
+    return (diff**2).mean()
 
 
 def curvature_penalty(
@@ -111,11 +111,11 @@ def curvature_penalty(
         torch.tensor([[[[-1], [0], [1]]]], dtype=density.dtype, device=density.device),
         padding=(1, 0),
     )
-    boundary_weight = (grad_x ** 2 + grad_y ** 2).sqrt()
+    boundary_weight = (grad_x**2 + grad_y**2).sqrt()
 
-    weighted_lap = (laplacian ** 2) * boundary_weight
+    weighted_lap = (laplacian**2) * boundary_weight
     # Apply max_curvature threshold — only penalize excess curvature
-    excess = torch.clamp(weighted_lap - max_curvature ** 2, min=0.0)
+    excess = torch.clamp(weighted_lap - max_curvature**2, min=0.0)
     return excess.mean()
 
 
@@ -162,18 +162,21 @@ def corner_rounding_penalty(
         density = density.unsqueeze(0).unsqueeze(0)
 
     # Sobel filters for gradient direction
-    sobel_x = torch.tensor(
-        [[[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]]],
-        dtype=density.dtype,
-        device=density.device,
-    ) / 8.0
+    sobel_x = (
+        torch.tensor(
+            [[[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]]],
+            dtype=density.dtype,
+            device=density.device,
+        )
+        / 8.0
+    )
     sobel_y = sobel_x.transpose(-2, -1)
 
     gx = F.conv2d(density, sobel_x, padding=1)
     gy = F.conv2d(density, sobel_y, padding=1)
 
     # Gradient magnitude and direction
-    mag = (gx ** 2 + gy ** 2).sqrt() + 1e-12
+    mag = (gx**2 + gy**2).sqrt() + 1e-12
     theta = torch.atan2(gy, gx)
 
     # Laplacian of gradient direction (changes rapidly at corners)
@@ -186,7 +189,7 @@ def corner_rounding_penalty(
     dir_change = F.conv2d(theta, lap_kernel, padding=1)
 
     # Weight by gradient magnitude (boundary regions)
-    weighted = (dir_change ** 2) * mag
+    weighted = (dir_change**2) * mag
     return weighted.mean()
 
 

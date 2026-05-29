@@ -84,9 +84,9 @@ class MetalensDesigner:
         self.grid_shape = (self.n_pixels, self.n_pixels)
 
         # Coordinate grids (in nm)
-        coords = torch.arange(
-            self.n_pixels, dtype=torch.float64, device=self.device
-        ) * pixel_size_nm
+        coords = (
+            torch.arange(self.n_pixels, dtype=torch.float64, device=self.device) * pixel_size_nm
+        )
         coords = coords - coords[-1] / 2  # center at 0
         self.y_grid, self.x_grid = torch.meshgrid(coords, coords, indexing="ij")
 
@@ -98,8 +98,8 @@ class MetalensDesigner:
             fourier_orders=fourier_orders,
             wavelength_nm=wavelength_nm,
             period_nm=(pixel_size_nm, pixel_size_nm),
-            eps_ambient=n_ambient ** 2,
-            eps_substrate=n_ambient ** 2,
+            eps_ambient=n_ambient**2,
+            eps_substrate=n_ambient**2,
             device=self.device,
         )
 
@@ -115,7 +115,7 @@ class MetalensDesigner:
         """
         k0 = 2 * math.pi / self.wavelength_nm
         f_nm = self.focal_length_um * 1000
-        r = torch.sqrt(self.x_grid ** 2 + self.y_grid ** 2 + f_nm ** 2)
+        r = torch.sqrt(self.x_grid**2 + self.y_grid**2 + f_nm**2)
         phase = k0 * (r - f_nm)
         return phase
 
@@ -143,7 +143,7 @@ class MetalensDesigner:
             torch.sin(current_phase - self.target_phase),
             torch.cos(current_phase - self.target_phase),
         )
-        return (diff ** 2).mean()
+        return (diff**2).mean()
 
     def strehl_ratio(
         self,
@@ -169,7 +169,7 @@ class MetalensDesigner:
             torch.sin(current_phase - self.target_phase),
             torch.cos(current_phase - self.target_phase),
         )
-        var = (diff ** 2).mean()
+        var = (diff**2).mean()
         return torch.exp(-var)
 
     def optimize(
@@ -233,7 +233,9 @@ class MetalensDesigner:
 
         if convergence_monitor is None:
             convergence_monitor = ConvergenceMonitor(
-                patience=10, z_threshold=0.3, window=max(10, min(50, n_steps // 4)),
+                patience=10,
+                z_threshold=0.3,
+                window=max(10, min(50, n_steps // 4)),
             )
 
         loss_history = []
@@ -242,7 +244,10 @@ class MetalensDesigner:
             # Progressive beta-continuation: start soft, sharpen over time
             if beta_schedule:
                 beta = beta_continuation_schedule(
-                    step, n_steps, beta_start=beta_start, beta_end=beta_end,
+                    step,
+                    n_steps,
+                    beta_start=beta_start,
+                    beta_end=beta_end,
                 )
             else:
                 beta = beta_end
@@ -279,8 +284,7 @@ class MetalensDesigner:
             if info["should_stop"]:
                 if verbose:
                     print(
-                        f"Step {step:4d}: converged "
-                        f"(z={info['z_score']:.4f}, loss={loss_val:.6f})"
+                        f"Step {step:4d}: converged (z={info['z_score']:.4f}, loss={loss_val:.6f})"
                     )
                 break
 
@@ -289,16 +293,12 @@ class MetalensDesigner:
                     pg["lr"] *= convergence_monitor.lr_decay_factor
                 if verbose:
                     print(
-                        f"Step {step:4d}: stalled, decaying LR to "
-                        f"{opt.param_groups[0]['lr']:.2e}"
+                        f"Step {step:4d}: stalled, decaying LR to {opt.param_groups[0]['lr']:.2e}"
                     )
 
             if verbose and step % 50 == 0:
                 strehl = self.strehl_ratio(height_map.detach()).item()
-                print(
-                    f"Step {step:4d}: loss={loss_val:.6f}, "
-                    f"Strehl={strehl:.4f}, beta={beta:.1f}"
-                )
+                print(f"Step {step:4d}: loss={loss_val:.6f}, Strehl={strehl:.4f}, beta={beta:.1f}")
 
         return height_map.detach(), loss_history
 

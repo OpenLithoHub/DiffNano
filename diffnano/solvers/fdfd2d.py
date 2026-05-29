@@ -91,13 +91,13 @@ def _build_helmholtz_tm(
         # Absorbing factor: integrate sigma profile
         # For FDFD: modify the Laplacian with complex stretching
         s_complex = s.to(dtype)
-        absorber = -1j * omega * s_complex + s_complex ** 2 / (abs(omega) + 1e-12)
+        absorber = -1j * omega * s_complex + s_complex**2 / (abs(omega) + 1e-12)
     else:
         absorber = 0.0
 
     # Full operator: A = L + k0^2 * eps_diag + absorber
     k0_real = omega
-    k0_sq_real = k0_real ** 2
+    k0_sq_real = k0_real**2
 
     A = L.to(dtype) + torch.diag(k0_sq_real * eps_diag.to(dtype) + absorber)
 
@@ -155,8 +155,10 @@ def _build_helmholtz_te(
     else:
         absorber = 0.0
 
-    k0_diag = (k0_real ** 2 + absorber) * torch.ones(
-        N, device=device, dtype=dtype,
+    k0_diag = (k0_real**2 + absorber) * torch.ones(
+        N,
+        device=device,
+        dtype=dtype,
     )
     A = L_weighted + torch.diag(k0_diag)
 

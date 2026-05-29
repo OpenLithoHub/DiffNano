@@ -170,7 +170,9 @@ class EndToEndPipeline:
         from diffnano.design.projection import beta_continuation_schedule, heaviside_projection
 
         density = torch.rand(
-            *self.grid_shape, device=self._device, dtype=torch.float64,
+            *self.grid_shape,
+            device=self._device,
+            dtype=torch.float64,
         )
         density = density.detach().requires_grad_(True)
 

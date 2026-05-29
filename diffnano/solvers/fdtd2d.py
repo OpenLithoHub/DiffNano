@@ -70,7 +70,7 @@ class _CPMLRegion:
         if pml_layers > 0:
             for i in range(pml_layers):
                 d = (pml_layers - i) / pml_layers
-                val = sigma_max * d ** order
+                val = sigma_max * d**order
                 sigma[i] = val
                 sigma[size - 1 - i] = val
 
@@ -186,7 +186,7 @@ class FDTDSolver2D:
             t0_t = torch.tensor(t0, dtype=torch.float64, device=device)
             spread_t = torch.tensor(spread, dtype=torch.float64, device=device)
             sin_val = torch.sin(torch.tensor(omega * t, device=device))
-            envelope = torch.exp(-((t_t - t0_t) ** 2) / (2 * spread_t ** 2))
+            envelope = torch.exp(-((t_t - t0_t) ** 2) / (2 * spread_t**2))
             return amp * sin_val * envelope
         elif src_type == "continuous":
             amp = source.get("amplitude", 1.0)
@@ -408,8 +408,13 @@ class FDTDSolver2D:
             steps_this = min(seg_len, n_steps - step_idx)
             e_field, h1, h2 = cp.checkpoint(
                 _segment_forward,
-                e_field, h1, h2, eps_r, mu_r,
-                step_idx, steps_this,
+                e_field,
+                h1,
+                h2,
+                eps_r,
+                mu_r,
+                step_idx,
+                steps_this,
                 use_reentrant=False,
             )
             step_idx += steps_this
@@ -462,11 +467,17 @@ class FDTDSolver2D:
 
         if self.use_checkpoint:
             final_field, snapshots = self._run_steps_checkpointed(
-                eps_r, mu_r, self.n_steps, src,
+                eps_r,
+                mu_r,
+                self.n_steps,
+                src,
             )
         else:
             final_field, snapshots = self._run_steps(
-                eps_r, mu_r, self.n_steps, src,
+                eps_r,
+                mu_r,
+                self.n_steps,
+                src,
             )
 
         return SimResult(

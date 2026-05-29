@@ -95,7 +95,6 @@ def export_polygons_to_gds(
     except ImportError:
         raise ImportError("gdstk is required for GDS export. Install with: pip install gdstk")
 
-
     lib = gdstk.Library("DiffNano")
     cell = lib.new_cell("DESIGN")
 

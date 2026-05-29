@@ -88,19 +88,27 @@ class _PhysicsGatedNet(nn.Module):
             x = nn.functional.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False)
             # Match skip dimensions by center-cropping or padding
             if x.shape[2] > skip.shape[2] or x.shape[3] > skip.shape[3]:
-                x = x[:, :, :skip.shape[2], :skip.shape[3]]
+                x = x[:, :, : skip.shape[2], : skip.shape[3]]
             elif x.shape[2] < skip.shape[2] or x.shape[3] < skip.shape[3]:
-                x = nn.functional.pad(x, [
-                    0, skip.shape[3] - x.shape[3],
-                    0, skip.shape[2] - x.shape[2],
-                ])
+                x = nn.functional.pad(
+                    x,
+                    [
+                        0,
+                        skip.shape[3] - x.shape[3],
+                        0,
+                        skip.shape[2] - x.shape[2],
+                    ],
+                )
             x = x + skip
             x = block(x)
 
         # Final resize to match input dimensions
         if x.shape[2] != H_in or x.shape[3] != W_in:
             x = nn.functional.interpolate(
-                x, size=(H_in, W_in), mode="bilinear", align_corners=False,
+                x,
+                size=(H_in, W_in),
+                mode="bilinear",
+                align_corners=False,
             )
 
         # Physics-gated output: sigmoid ensures [0, 1] (energy conservation)
@@ -138,11 +146,15 @@ class LearnedFabModel:
         self.grid_shape = grid_shape
         self._device = torch.device(device)
 
-        self.net = _PhysicsGatedNet(
-            in_channels=1,
-            hidden_channels=hidden_channels,
-            n_blocks=n_blocks,
-        ).to(self._device).double()
+        self.net = (
+            _PhysicsGatedNet(
+                in_channels=1,
+                hidden_channels=hidden_channels,
+                n_blocks=n_blocks,
+            )
+            .to(self._device)
+            .double()
+        )
 
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=lr)
         self._trained = False

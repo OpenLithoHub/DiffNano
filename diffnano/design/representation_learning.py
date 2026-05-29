@@ -47,7 +47,9 @@ class _Decoder(nn.Module):
             nn.ConvTranspose2d(hidden, 1, 3, stride=2, padding=1, output_padding=1),
         )
         self.final_upsample = nn.Upsample(
-            size=(out_size, out_size), mode="bilinear", align_corners=False,
+            size=(out_size, out_size),
+            mode="bilinear",
+            align_corners=False,
         )
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
@@ -106,11 +108,14 @@ class LearnedRepresentation:
         return mu + eps * std
 
     def _vae_loss(
-        self, x: torch.Tensor, recon: torch.Tensor,
-        mu: torch.Tensor, logvar: torch.Tensor,
+        self,
+        x: torch.Tensor,
+        recon: torch.Tensor,
+        mu: torch.Tensor,
+        logvar: torch.Tensor,
     ) -> torch.Tensor:
         recon_loss = nn.functional.mse_loss(recon, x, reduction="sum")
-        kl_loss = -0.5 * (1 + logvar - mu ** 2 - logvar.exp()).sum()
+        kl_loss = -0.5 * (1 + logvar - mu**2 - logvar.exp()).sum()
         return recon_loss + kl_loss
 
     def train_vae(
@@ -137,9 +142,7 @@ class LearnedRepresentation:
         self.encoder.train()
         self.decoder.train()
 
-        data = torch.stack(
-            [d.to(self._device).to(torch.float64).unsqueeze(0) for d in designs]
-        )
+        data = torch.stack([d.to(self._device).to(torch.float64).unsqueeze(0) for d in designs])
         n = data.shape[0]
         loss_history = []
 
@@ -148,7 +151,7 @@ class LearnedRepresentation:
             total_loss = 0.0
 
             for start in range(0, n, batch_size):
-                idx = perm[start:start + batch_size]
+                idx = perm[start : start + batch_size]
                 batch = data[idx]
 
                 mu, logvar = self.encoder(batch)
@@ -232,8 +235,10 @@ class LearnedRepresentation:
             p.requires_grad_(False)
 
         z = torch.zeros(
-            self.latent_dim, dtype=torch.float64,
-            device=self._device, requires_grad=True,
+            self.latent_dim,
+            dtype=torch.float64,
+            device=self._device,
+            requires_grad=True,
         )
         opt = torch.optim.Adam([z], lr=lr)
         loss_history = []

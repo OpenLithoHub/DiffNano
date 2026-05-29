@@ -360,7 +360,10 @@ class TestNeuralSurrogate:
 
     def test_train_and_forward(self, surrogate):
         surrogate.train_surrogate(
-            n_samples=20, geometry_shape=(3, 10), n_epochs=5, verbose=False,
+            n_samples=20,
+            geometry_shape=(3, 10),
+            n_epochs=5,
+            verbose=False,
         )
         assert surrogate._trained is True
 
@@ -378,7 +381,10 @@ class TestNeuralSurrogate:
 
     def test_accuracy(self, surrogate):
         surrogate.train_surrogate(
-            n_samples=30, geometry_shape=(3, 10), n_epochs=10, verbose=False,
+            n_samples=30,
+            geometry_shape=(3, 10),
+            n_epochs=10,
+            verbose=False,
         )
         metrics = surrogate.accuracy(n_test=5, geometry_shape=(3, 10))
         assert "mean_max_rel_error" in metrics
@@ -459,6 +465,9 @@ class TestDifferentiableResistModel:
         dose = torch.rand(8, 8, dtype=torch.float64)
         target = model.forward(dose).field.squeeze(0)
         loss_history = model.calibrate(
-            [(dose, target)], n_steps=3, lr=0.01, verbose=False,
+            [(dose, target)],
+            n_steps=3,
+            lr=0.01,
+            verbose=False,
         )
         assert len(loss_history) == 3

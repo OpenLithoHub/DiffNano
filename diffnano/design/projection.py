@@ -64,7 +64,7 @@ def smooth_filter(
     sigma = radius / 2.0
 
     x = torch.arange(k_size, dtype=density.dtype, device=density.device) - k_size // 2
-    kernel_1d = torch.exp(-x ** 2 / (2 * sigma ** 2 + 1e-12))
+    kernel_1d = torch.exp(-(x**2) / (2 * sigma**2 + 1e-12))
     kernel_1d = kernel_1d / kernel_1d.sum()
     kernel_2d = kernel_1d.unsqueeze(1) @ kernel_1d.unsqueeze(0)
     kernel = kernel_2d.unsqueeze(0).unsqueeze(0)

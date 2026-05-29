@@ -81,8 +81,8 @@ class DFMMetalensDesigner:
         # Density field parameterization (shared θ)
         self.density_param = DensityField(
             grid_shape=self.grid_shape,
-            eps_low=n_ambient ** 2,
-            eps_high=n_material ** 2,
+            eps_low=n_ambient**2,
+            eps_high=n_material**2,
             beta=1.0,
         )
 
@@ -91,8 +91,8 @@ class DFMMetalensDesigner:
             fourier_orders=fourier_orders,
             wavelength_nm=wavelength_nm,
             period_nm=(pixel_size_nm, pixel_size_nm),
-            eps_ambient=n_ambient ** 2,
-            eps_substrate=n_ambient ** 2,
+            eps_ambient=n_ambient**2,
+            eps_substrate=n_ambient**2,
             device=self.device,
         )
 
@@ -109,17 +109,15 @@ class DFMMetalensDesigner:
         )
 
         # Target phase profile
-        coords = torch.arange(
-            self.n_pixels, dtype=torch.float64, device=self.device
-        ) * pixel_size_nm
+        coords = (
+            torch.arange(self.n_pixels, dtype=torch.float64, device=self.device) * pixel_size_nm
+        )
         coords = coords - coords[-1] / 2
         y_grid, x_grid = torch.meshgrid(coords, coords, indexing="ij")
         k0 = 2 * math.pi / wavelength_nm
         na_frac = numerical_aperture / n_ambient
         f_nm = diameter_um * 1000 / 2 / math.tan(math.asin(na_frac))
-        self.target_phase = k0 * (
-            torch.sqrt(x_grid ** 2 + y_grid ** 2 + f_nm ** 2) - f_nm
-        )
+        self.target_phase = k0 * (torch.sqrt(x_grid**2 + y_grid**2 + f_nm**2) - f_nm)
 
     def _optical_loss(
         self,
@@ -135,7 +133,7 @@ class DFMMetalensDesigner:
             torch.sin(current_wrapped - target_wrapped),
             torch.cos(current_wrapped - target_wrapped),
         )
-        return (diff ** 2).mean()
+        return (diff**2).mean()
 
     def _litho_loss(self, mask: torch.Tensor) -> torch.Tensor:
         """Lithography EPE via Hopkins forward model."""
@@ -171,11 +169,7 @@ class DFMMetalensDesigner:
         # Fabrication constraints
         loss_fab = combined_fabrication_penalty(mask)
 
-        total = (
-            lambda_optical * loss_optical
-            + lambda_litho * loss_litho
-            + lambda_fab * loss_fab
-        )
+        total = lambda_optical * loss_optical + lambda_litho * loss_litho + lambda_fab * loss_fab
 
         breakdown = {
             "total": total,
@@ -198,9 +192,7 @@ class DFMMetalensDesigner:
         verbose: bool = True,
     ) -> tuple[torch.Tensor, list[float], list[dict]]:
         """Run the DFM-metalens optimization loop."""
-        density = torch.rand(
-            *self.grid_shape, device=self.device, dtype=torch.float64
-        )
+        density = torch.rand(*self.grid_shape, device=self.device, dtype=torch.float64)
         density = density.detach().requires_grad_(True)
 
         opt = torch.optim.Adam([density], lr=lr)
@@ -208,30 +200,35 @@ class DFMMetalensDesigner:
         breakdown_history = []
 
         for step in range(n_steps):
-            beta = beta_continuation_schedule(
-                step, n_steps, beta_start=1.0, beta_end=16.0
-            )
+            beta = beta_continuation_schedule(step, n_steps, beta_start=1.0, beta_end=16.0)
 
             if robust:
                 from diffnano.design.robustness import robust_gradient_step
 
                 def _loss_fn(d):
-                    t, _ = self.total_loss(
-                        d, lambda_optical, lambda_litho, lambda_fab, beta
-                    )
+                    t, _ = self.total_loss(d, lambda_optical, lambda_litho, lambda_fab, beta)
                     return t
 
                 loss = robust_gradient_step(
-                    density, _loss_fn, sigma_nm=sigma_nm, n_samples=n_mc_samples,
+                    density,
+                    _loss_fn,
+                    sigma_nm=sigma_nm,
+                    n_samples=n_mc_samples,
                 )
                 _, breakdown = self.total_loss(
                     density.detach(),
-                    lambda_optical, lambda_litho, lambda_fab, beta,
+                    lambda_optical,
+                    lambda_litho,
+                    lambda_fab,
+                    beta,
                 )
             else:
                 loss, breakdown = self.total_loss(
                     density,
-                    lambda_optical, lambda_litho, lambda_fab, beta,
+                    lambda_optical,
+                    lambda_litho,
+                    lambda_fab,
+                    beta,
                 )
 
             if torch.isnan(loss):
@@ -280,18 +277,14 @@ class DFMMetalensDesigner:
         verbose: bool = True,
     ) -> tuple[torch.Tensor, list[float]]:
         """Decoupled baseline: optical-only optimization, then litho check."""
-        density = torch.rand(
-            *self.grid_shape, device=self.device, dtype=torch.float64
-        )
+        density = torch.rand(*self.grid_shape, device=self.device, dtype=torch.float64)
         density = density.detach().requires_grad_(True)
 
         opt = torch.optim.Adam([density], lr=lr)
         loss_history = []
 
         for step in range(n_steps):
-            beta = beta_continuation_schedule(
-                step, n_steps, beta_start=1.0, beta_end=16.0
-            )
+            beta = beta_continuation_schedule(step, n_steps, beta_start=1.0, beta_end=16.0)
 
             mask = self.density_param(density, beta=beta)
             loss = self._optical_loss(mask) + lambda_fab * combined_fabrication_penalty(mask)

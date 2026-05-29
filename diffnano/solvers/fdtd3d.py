@@ -66,7 +66,7 @@ class _CPMLRegion3D:
         if pml_layers > 0:
             for i in range(pml_layers):
                 d = (pml_layers - i) / pml_layers
-                val = sigma_max * d ** order
+                val = sigma_max * d**order
                 sigma[i] = val
                 sigma[size - 1 - i] = val
 
@@ -165,7 +165,7 @@ class FDTDSolver3D:
             t_t = torch.tensor(t, dtype=torch.float64, device=dev)
             t0_t = torch.tensor(t0, dtype=torch.float64, device=dev)
             spread_t = torch.tensor(spread, dtype=torch.float64, device=dev)
-            envelope = torch.exp(-((t_t - t0_t) ** 2) / (2 * spread_t ** 2))
+            envelope = torch.exp(-((t_t - t0_t) ** 2) / (2 * spread_t**2))
             return amp * torch.sin(torch.tensor(omega * t, device=dev)) * envelope
         elif src_type == "continuous":
             amp = source.get("amplitude", 1.0)
@@ -248,8 +248,7 @@ class FDTDSolver3D:
         mu_r: torch.Tensor,
         step: int,
         source: dict,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor,
-               torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """One 3D FDTD time step (all six field components) with CPML."""
         dt = self.dt
         dx = self.dl
@@ -264,8 +263,10 @@ class FDTDSolver3D:
         dEy_dz = torch.zeros_like(Ey)
         dEy_dz[:-1, :, :] = (Ey[1:, :, :] - Ey[:-1, :, :]) / dz
         Hx = b_y.unsqueeze(0).unsqueeze(-1) * Hx - (dt / mu_r) * (
-            c_y.unsqueeze(0).unsqueeze(-1) * dEz_dy + dEz_dy
-            - c_z.unsqueeze(0).unsqueeze(0) * dEy_dz - dEy_dz
+            c_y.unsqueeze(0).unsqueeze(-1) * dEz_dy
+            + dEz_dy
+            - c_z.unsqueeze(0).unsqueeze(0) * dEy_dz
+            - dEy_dz
         )
 
         dEx_dz = torch.zeros_like(Ex)
@@ -273,8 +274,10 @@ class FDTDSolver3D:
         dEz_dx = torch.zeros_like(Ez)
         dEz_dx[:, :, :-1] = (Ez[:, :, 1:] - Ez[:, :, :-1]) / dx
         Hy = b_z.unsqueeze(0).unsqueeze(0) * Hy - (dt / mu_r) * (
-            c_z.unsqueeze(0).unsqueeze(0) * dEx_dz + dEx_dz
-            - c_x.unsqueeze(0).unsqueeze(-1) * dEz_dx - dEz_dx
+            c_z.unsqueeze(0).unsqueeze(0) * dEx_dz
+            + dEx_dz
+            - c_x.unsqueeze(0).unsqueeze(-1) * dEz_dx
+            - dEz_dx
         )
 
         dEy_dx = torch.zeros_like(Ey)
@@ -282,8 +285,10 @@ class FDTDSolver3D:
         dEx_dy = torch.zeros_like(Ex)
         dEx_dy[:, :-1, :] = (Ex[:, 1:, :] - Ex[:, :-1, :]) / dy
         Hz = b_x.unsqueeze(0).unsqueeze(0) * Hz - (dt / mu_r) * (
-            c_x.unsqueeze(0).unsqueeze(0) * dEy_dx + dEy_dx
-            - c_y.unsqueeze(0).unsqueeze(-1) * dEx_dy - dEx_dy
+            c_x.unsqueeze(0).unsqueeze(0) * dEy_dx
+            + dEy_dx
+            - c_y.unsqueeze(0).unsqueeze(-1) * dEx_dy
+            - dEx_dy
         )
 
         # --- Update E fields with CPML ---
@@ -291,33 +296,33 @@ class FDTDSolver3D:
         dHz_dy[:, 1:, :] = (Hz[:, 1:, :] - Hz[:, :-1, :]) / dy
         dHy_dz = torch.zeros_like(Hy)
         dHy_dz[1:, :, :] = (Hy[1:, :, :] - Hy[:-1, :, :]) / dz
-        Ex = b_y.unsqueeze(0).unsqueeze(-1) * b_z.unsqueeze(0).unsqueeze(0) * Ex + (
-            dt / eps_r
-        ) * (
-            c_y.unsqueeze(0).unsqueeze(-1) * dHz_dy + dHz_dy
-            - c_z.unsqueeze(0).unsqueeze(0) * dHy_dz - dHy_dz
+        Ex = b_y.unsqueeze(0).unsqueeze(-1) * b_z.unsqueeze(0).unsqueeze(0) * Ex + (dt / eps_r) * (
+            c_y.unsqueeze(0).unsqueeze(-1) * dHz_dy
+            + dHz_dy
+            - c_z.unsqueeze(0).unsqueeze(0) * dHy_dz
+            - dHy_dz
         )
 
         dHx_dz = torch.zeros_like(Hx)
         dHx_dz[1:, :, :] = (Hx[1:, :, :] - Hx[:-1, :, :]) / dz
         dHz_dx = torch.zeros_like(Hz)
         dHz_dx[:, :, 1:] = (Hz[:, :, 1:] - Hz[:, :, :-1]) / dx
-        Ey = b_z.unsqueeze(0).unsqueeze(0) * b_x.unsqueeze(0).unsqueeze(-1) * Ey + (
-            dt / eps_r
-        ) * (
-            c_z.unsqueeze(0).unsqueeze(0) * dHx_dz + dHx_dz
-            - c_x.unsqueeze(0).unsqueeze(-1) * dHz_dx - dHz_dx
+        Ey = b_z.unsqueeze(0).unsqueeze(0) * b_x.unsqueeze(0).unsqueeze(-1) * Ey + (dt / eps_r) * (
+            c_z.unsqueeze(0).unsqueeze(0) * dHx_dz
+            + dHx_dz
+            - c_x.unsqueeze(0).unsqueeze(-1) * dHz_dx
+            - dHz_dx
         )
 
         dHy_dx = torch.zeros_like(Hy)
         dHy_dx[:, :, 1:] = (Hy[:, :, 1:] - Hy[:, :, :-1]) / dx
         dHx_dy = torch.zeros_like(Hx)
         dHx_dy[:, 1:, :] = (Hx[:, 1:, :] - Hx[:, :-1, :]) / dy
-        Ez = b_x.unsqueeze(0).unsqueeze(0) * b_y.unsqueeze(0).unsqueeze(-1) * Ez + (
-            dt / eps_r
-        ) * (
-            c_x.unsqueeze(0).unsqueeze(0) * dHy_dx + dHy_dx
-            - c_y.unsqueeze(0).unsqueeze(-1) * dHx_dy - dHx_dy
+        Ez = b_x.unsqueeze(0).unsqueeze(0) * b_y.unsqueeze(0).unsqueeze(-1) * Ez + (dt / eps_r) * (
+            c_x.unsqueeze(0).unsqueeze(0) * dHy_dx
+            + dHy_dx
+            - c_y.unsqueeze(0).unsqueeze(-1) * dHx_dy
+            - dHx_dy
         )
 
         Ez = self._inject_source(Ez, step, source, "Ez")
@@ -344,7 +349,16 @@ class FDTDSolver3D:
 
         for step in range(n_steps):
             Ex, Ey, Ez, Hx, Hy, Hz = self._time_step(
-                Ex, Ey, Ez, Hx, Hy, Hz, eps_r, mu_r, step, source,
+                Ex,
+                Ey,
+                Ez,
+                Hx,
+                Hy,
+                Hz,
+                eps_r,
+                mu_r,
+                step,
+                source,
             )
 
         return Ez, Ex, Ey
@@ -361,7 +375,16 @@ class FDTDSolver3D:
         def _segment(Ex, Ey, Ez, Hx, Hy, Hz, eps, mu, start, steps):
             for step in range(start, start + steps):
                 Ex, Ey, Ez, Hx, Hy, Hz = self._time_step(
-                    Ex, Ey, Ez, Hx, Hy, Hz, eps, mu, step, source,
+                    Ex,
+                    Ey,
+                    Ez,
+                    Hx,
+                    Hy,
+                    Hz,
+                    eps,
+                    mu,
+                    step,
+                    source,
                 )
             return Ex, Ey, Ez, Hx, Hy, Hz
 
@@ -381,8 +404,16 @@ class FDTDSolver3D:
             steps_this = min(seg_len, n_steps - step_idx)
             Ex, Ey, Ez, Hx, Hy, Hz = cp.checkpoint(
                 _segment,
-                Ex, Ey, Ez, Hx, Hy, Hz, eps_r, mu_r,
-                step_idx, steps_this,
+                Ex,
+                Ey,
+                Ez,
+                Hx,
+                Hy,
+                Hz,
+                eps_r,
+                mu_r,
+                step_idx,
+                steps_this,
                 use_reentrant=False,
             )
             step_idx += steps_this
@@ -496,7 +527,16 @@ class FDTDSolver3D:
 
         for step in range(steps):
             Ex, Ey, Ez, Hx, Hy, Hz = self._time_step(
-                Ex, Ey, Ez, Hx, Hy, Hz, eps_r, mu_r, step, src,
+                Ex,
+                Ey,
+                Ez,
+                Hx,
+                Hy,
+                Hz,
+                eps_r,
+                mu_r,
+                step,
+                src,
             )
             snapshots.append(Ez[pz, py, px].detach().clone())
 

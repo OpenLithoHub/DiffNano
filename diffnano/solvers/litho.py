@@ -108,7 +108,7 @@ class HopkinsLithoModel:
             # Shifted PSF (Gaussian approximation of Airy disk)
             sigma_psf = 0.42 * self.wavelength_nm / self.na  # Gaussian σ ≈ 0.42 λ/NA
             shift = offset * self.wavelength_nm / self.na  # source shift
-            psf_1d = torch.exp(-((x - shift) ** 2) / (2 * sigma_psf ** 2))
+            psf_1d = torch.exp(-((x - shift) ** 2) / (2 * sigma_psf**2))
             psf_1d = psf_1d / psf_1d.sum()
 
             # 2D separable PSF
@@ -150,7 +150,7 @@ class HopkinsLithoModel:
             conv = F.conv2d(mask_4d, k_4d, padding=(pad_h, pad_w))
             conv = conv[:, :, :H, :W].squeeze()
 
-            image = image + conv ** 2
+            image = image + conv**2
 
         # Normalize (avoid GPU sync — use tensor operations)
         img_max = image.max()
@@ -164,9 +164,7 @@ class HopkinsLithoModel:
         Pipeline: mask → aerial image → sigmoid resist model → printed contour.
         """
         image = self.aerial_image(mask)
-        printed = torch.sigmoid(
-            self.resist_beta * (image - self.resist_threshold)
-        )
+        printed = torch.sigmoid(self.resist_beta * (image - self.resist_threshold))
         return printed
 
     def edge_placement_error(

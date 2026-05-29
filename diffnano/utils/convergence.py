@@ -63,7 +63,7 @@ class HybridZScore:
             return 0.0
 
         # Use the most recent ``window`` entries
-        recent = history[-self.window:]
+        recent = history[-self.window :]
         if len(recent) < 2:
             return 0.0
 
@@ -163,8 +163,7 @@ class ConvergenceMonitor:
             self._converged_count = 0
 
         # Stall detection: Z-score is low but not low enough for convergence
-        if (self.z_threshold <= z < self.z_threshold * 3.0
-                and len(self._loss_history) > 10):
+        if self.z_threshold <= z < self.z_threshold * 3.0 and len(self._loss_history) > 10:
             self._stall_count += 1
         else:
             self._stall_count = 0

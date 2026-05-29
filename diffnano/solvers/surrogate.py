@@ -109,11 +109,15 @@ class NeuralSurrogate:
         self.stats = SurrogateStats()
 
         n_fourier = base_solver.n_fourier
-        self.net = _SurrogateNet(
-            input_size=input_size,
-            output_size=n_fourier,
-            hidden_channels=hidden_channels,
-        ).to(self._device).double()
+        self.net = (
+            _SurrogateNet(
+                input_size=input_size,
+                output_size=n_fourier,
+                hidden_channels=hidden_channels,
+            )
+            .to(self._device)
+            .double()
+        )
 
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=lr)
         self._trained = False
@@ -175,7 +179,7 @@ class NeuralSurrogate:
             n_batches = 0
 
             for start in range(0, n_samples, batch_size):
-                idx = perm[start:start + batch_size]
+                idx = perm[start : start + batch_size]
                 batch_geo = geos[idx]
                 batch_tgt = tgts[idx]
 

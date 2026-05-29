@@ -22,6 +22,7 @@ __all__ = ["HeightMap", "DensityField", "BSplineCurve", "signed_distance_field"]
 # Signed distance field (core primitive)
 # ---------------------------------------------------------------------------
 
+
 def signed_distance_field(
     grid_x: torch.Tensor,
     grid_y: torch.Tensor,
@@ -57,7 +58,7 @@ def signed_distance_field(
             b = closed[pi + 1]
 
             ab = b - a
-            ab_len_sq = (ab ** 2).sum() + 1e-12
+            ab_len_sq = (ab**2).sum() + 1e-12
 
             ap_x = grid_x - a[0]
             ap_y = grid_y - a[1]
@@ -176,9 +177,9 @@ def _eval_bspline_closed(
     f = fracs.unsqueeze(-1)
     curve = (
         (1 - f) ** 3 / 6 * p0
-        + (3 * f ** 3 - 6 * f ** 2 + 4) / 6 * p1
-        + (-3 * f ** 3 + 3 * f ** 2 + 3 * f + 1) / 6 * p2
-        + f ** 3 / 6 * p3
+        + (3 * f**3 - 6 * f**2 + 4) / 6 * p1
+        + (-3 * f**3 + 3 * f**2 + 3 * f + 1) / 6 * p2
+        + f**3 / 6 * p3
     )
     return curve
 
@@ -186,6 +187,7 @@ def _eval_bspline_closed(
 # ---------------------------------------------------------------------------
 # HeightMap parameterization
 # ---------------------------------------------------------------------------
+
 
 class HeightMap:
     """Height map → phase profile (thin-element approximation).
@@ -241,6 +243,7 @@ class HeightMap:
 # ---------------------------------------------------------------------------
 # DensityField parameterization
 # ---------------------------------------------------------------------------
+
 
 class DensityField:
     """Density → permittivity via Heaviside projection with β-continuation.
@@ -306,6 +309,7 @@ class DensityField:
 # ---------------------------------------------------------------------------
 # BSplineCurve parameterization
 # ---------------------------------------------------------------------------
+
 
 class BSplineCurve:
     """B-spline control points → binary mask via differentiable distance-field rasterization.

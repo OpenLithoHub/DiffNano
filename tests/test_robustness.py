@@ -95,10 +95,11 @@ class TestRobustGradientStep:
         params = torch.randn(10, dtype=torch.float64, requires_grad=True)
 
         def forward_fn(p):
-            return (p ** 2).sum()
+            return (p**2).sum()
 
         loss = robust_gradient_step(
-            params, forward_fn,
+            params,
+            forward_fn,
             sigma_nm=1.0,
             n_samples=4,
             antithetic=True,
@@ -117,7 +118,8 @@ class TestRobustGradientStep:
             return p + delta * 0.1
 
         loss = robust_gradient_step(
-            params, forward_fn,
+            params,
+            forward_fn,
             sigma_nm=2.0,
             n_samples=4,
             perturbation_fn=perturb_fn,
@@ -178,15 +180,19 @@ class TestAdaptiveRobustOptimizer:
         params = torch.randn(10, dtype=torch.float64)
 
         def forward_fn(p, delta):
-            return (p ** 2).sum()
+            return (p**2).sum()
 
         def perturb_fn(p, delta):
             return p + delta.sum() * 0.01
 
         opt = AdaptiveRobustOptimizer(n_variation_dims=2, sigma=1.0)
         result, history = opt.optimize(
-            params, forward_fn, perturb_fn,
-            n_steps=10, lr=0.01, verbose=False,
+            params,
+            forward_fn,
+            perturb_fn,
+            n_steps=10,
+            lr=0.01,
+            verbose=False,
         )
         assert result.shape == params.shape
         assert len(history) == 10
@@ -196,13 +202,16 @@ class TestAdaptiveRobustOptimizer:
         params = torch.randn(5, dtype=torch.float64, requires_grad=True)
 
         def forward_fn(p, delta):
-            return (p ** 2).sum()
+            return (p**2).sum()
 
         def perturb_fn(p, delta):
             return p
 
         loss = opt.compute_robust_loss(
-            params, forward_fn, perturb_fn, curriculum_frac=0.5,
+            params,
+            forward_fn,
+            perturb_fn,
+            curriculum_frac=0.5,
         )
         assert loss.numel() == 1
         loss.backward()
@@ -276,12 +285,15 @@ class TestMultiAxisPerturbation:
         assert result.shape == density.shape
 
     def test_correlated_sampling(self):
-        corr = torch.tensor([
-            [1.0, 0.5, 0.3, 0.0],
-            [0.5, 1.0, 0.2, 0.0],
-            [0.3, 0.2, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ], dtype=torch.float64)
+        corr = torch.tensor(
+            [
+                [1.0, 0.5, 0.3, 0.0],
+                [0.5, 1.0, 0.2, 0.0],
+                [0.3, 0.2, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            dtype=torch.float64,
+        )
         pert = MultiAxisPerturbation(correlation_matrix=corr)
         samples = pert.sample(100)
         assert samples.shape == (100, 4)

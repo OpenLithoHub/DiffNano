@@ -31,6 +31,7 @@ __all__ = [
 # C5.1: Reparameterization-trick sampling
 # ---------------------------------------------------------------------------
 
+
 def reparameterize_sample(
     mu: torch.Tensor,
     sigma: torch.Tensor,
@@ -70,6 +71,7 @@ def reparameterize_sample(
 # ---------------------------------------------------------------------------
 # C5.2: Distance-field perturbation kernel
 # ---------------------------------------------------------------------------
+
 
 def linewidth_perturbation(
     sdf: torch.Tensor,
@@ -138,6 +140,7 @@ def apply_perturbation_to_density(
 # C5.3: Relaxed Heaviside boundary perturbation
 # ---------------------------------------------------------------------------
 
+
 def relaxed_heaviside_perturbation(
     sdf: torch.Tensor,
     delta_nm: torch.Tensor,
@@ -172,6 +175,7 @@ def relaxed_heaviside_perturbation(
 # C5.4: Variance-reduced robust gradient (antithetic sampling)
 # ---------------------------------------------------------------------------
 
+
 def antithetic_sampler(
     sigma: float | torch.Tensor,
     shape: tuple[int, ...] | torch.Size,
@@ -205,6 +209,7 @@ def antithetic_sampler(
 # ---------------------------------------------------------------------------
 # Robust optimization loop
 # ---------------------------------------------------------------------------
+
 
 def robust_gradient_step(
     params: torch.Tensor,

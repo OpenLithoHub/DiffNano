@@ -72,7 +72,7 @@ class DesignableMask:
         col_bounds = bounds[1] if bounds[1] is not None else (0, W)
 
         mask = torch.zeros(H, W, dtype=torch.bool, device=device)
-        mask[row_bounds[0]:row_bounds[1], col_bounds[0]:col_bounds[1]] = True
+        mask[row_bounds[0] : row_bounds[1], col_bounds[0] : col_bounds[1]] = True
         return cls(mask)
 
     @classmethod
@@ -103,7 +103,7 @@ class DesignableMask:
         y = torch.arange(H, device=device, dtype=torch.float32).unsqueeze(1)
         x = torch.arange(W, device=device, dtype=torch.float32).unsqueeze(0)
         dist_sq = (y - center[0]) ** 2 + (x - center[1]) ** 2
-        mask = dist_sq <= radius ** 2
+        mask = dist_sq <= radius**2
         return cls(mask)
 
     @classmethod
@@ -209,10 +209,7 @@ class DesignableMask:
     def __repr__(self) -> str:
         n = self.designable_count()
         t = self.total_pixels()
-        return (
-            f"DesignableMask(shape={self.shape}, "
-            f"designable={n}/{t}, frozen={t - n})"
-        )
+        return f"DesignableMask(shape={self.shape}, designable={n}/{t}, frozen={t - n})"
 
 
 # ----------------------------------------------------------------------

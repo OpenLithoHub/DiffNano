@@ -38,6 +38,7 @@ def __getattr__(name):
         "correlated_perturbation",
     ):
         from diffnano.design.robustness import adaptive
+
         return getattr(adaptive, name)
     if name in (
         "MultiAxisPerturbation",
@@ -46,6 +47,7 @@ def __getattr__(name):
         "corner_rounding_perturbation",
     ):
         from diffnano.design.robustness import subspace
+
         return getattr(subspace, name)
     if name in (
         "CornerSpec",
@@ -53,5 +55,6 @@ def __getattr__(name):
         "DEFAULT_CORNERS",
     ):
         from diffnano.design.robustness import corner_opt
+
         return getattr(corner_opt, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

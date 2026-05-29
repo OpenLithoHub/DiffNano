@@ -25,6 +25,7 @@ __all__ = ["gmres_matfree", "fdfd_fixed_point_gradient"]
 # Matrix-free restarted GMRES (GMRES-m / Arnoldi)
 # ---------------------------------------------------------------------------
 
+
 def gmres_matfree(
     matvec: Callable[[Tensor], Tensor],
     b: Tensor,
@@ -181,7 +182,9 @@ def gmres_matfree(
         H_sq = H[:j_used, :j_used]
         e_sq = e1[:j_used]
         y = torch.linalg.solve_triangular(
-            H_sq, e_sq.unsqueeze(1), upper=True,
+            H_sq,
+            e_sq.unsqueeze(1),
+            upper=True,
         ).squeeze(1)
 
         # Update solution: x += Q y
@@ -197,6 +200,7 @@ def gmres_matfree(
 # ---------------------------------------------------------------------------
 # Implicit differentiation through the FDFD converged field
 # ---------------------------------------------------------------------------
+
 
 def _fdfd_residual(
     E: Tensor,

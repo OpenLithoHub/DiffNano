@@ -100,7 +100,9 @@ class BroadbandOptimizer:
 
         if hasattr(self.solver, "diffraction_efficiency"):
             efficiencies = self.solver.diffraction_efficiency(
-                geometry, wavelengths=self.wavelengths, order=target_order,
+                geometry,
+                wavelengths=self.wavelengths,
+                order=target_order,
             )
         else:
             idx = target_order + self.solver.fourier_orders
@@ -139,7 +141,9 @@ class BroadbandOptimizer:
         )
 
         density = torch.rand(
-            *self.grid_shape, device=self._device, dtype=torch.float64,
+            *self.grid_shape,
+            device=self._device,
+            dtype=torch.float64,
         )
         density = density.detach().requires_grad_(True)
 

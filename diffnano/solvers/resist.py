@@ -62,16 +62,24 @@ class DifferentiableResistModel:
 
         # Differentiable parameters
         self.acid_diffusion = torch.tensor(
-            acid_diffusion_length_nm, dtype=torch.float64, device=self._device,
+            acid_diffusion_length_nm,
+            dtype=torch.float64,
+            device=self._device,
         )
         self.contrast = torch.tensor(
-            development_contrast, dtype=torch.float64, device=self._device,
+            development_contrast,
+            dtype=torch.float64,
+            device=self._device,
         )
         self.threshold = torch.tensor(
-            threshold_dose, dtype=torch.float64, device=self._device,
+            threshold_dose,
+            dtype=torch.float64,
+            device=self._device,
         )
         self.peb_diffusion = torch.tensor(
-            peb_diffusion_nm, dtype=torch.float64, device=self._device,
+            peb_diffusion_nm,
+            dtype=torch.float64,
+            device=self._device,
         )
 
     @property
@@ -106,7 +114,7 @@ class DifferentiableResistModel:
         k_half = k_size // 2
 
         x = torch.arange(-k_half, k_half + 1, device=field.device, dtype=field.dtype)
-        kernel_1d = torch.exp(-x ** 2 / (2 * sigma_px ** 2))
+        kernel_1d = torch.exp(-(x**2) / (2 * sigma_px**2))
         kernel_1d = kernel_1d / kernel_1d.sum()
 
         # Separable 2D convolution
@@ -156,9 +164,7 @@ class DifferentiableResistModel:
         peb_result = self._gaussian_blur(acid_diffused, self.peb_diffusion)
 
         # Step 4: Development (sigmoid with controllable contrast)
-        resist_thickness = torch.sigmoid(
-            self.contrast * (self.threshold - peb_result)
-        )
+        resist_thickness = torch.sigmoid(self.contrast * (self.threshold - peb_result))
 
         return SimResult(
             field=resist_thickness.unsqueeze(0),

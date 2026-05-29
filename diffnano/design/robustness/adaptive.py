@@ -170,7 +170,10 @@ def _morphological_opening(density: torch.Tensor, radius: int) -> torch.Tensor:
 
     # Approximate erosion via local min (negative max_pool)
     eroded = -torch.nn.functional.max_pool2d(
-        -padded, kernel_size, stride=1, padding=0,
+        -padded,
+        kernel_size,
+        stride=1,
+        padding=0,
     )
 
     # Re-pad for dilation
@@ -183,7 +186,10 @@ def _morphological_opening(density: torch.Tensor, radius: int) -> torch.Tensor:
 
     # Approximate dilation via local max
     dilated = torch.nn.functional.max_pool2d(
-        eroded_padded, kernel_size, stride=1, padding=0,
+        eroded_padded,
+        kernel_size,
+        stride=1,
+        padding=0,
     )
 
     return dilated.squeeze(0).squeeze(0)
@@ -228,9 +234,14 @@ class AdaptiveRobustOptimizer:
         if cov_matrix is not None:
             self.cov_chol = torch.linalg.cholesky(cov_matrix)
         else:
-            self.cov_chol = torch.eye(
-                n_variation_dims, device=self._device, dtype=torch.float64,
-            ) * sigma
+            self.cov_chol = (
+                torch.eye(
+                    n_variation_dims,
+                    device=self._device,
+                    dtype=torch.float64,
+                )
+                * sigma
+            )
 
     def compute_robust_loss(
         self,
@@ -258,8 +269,10 @@ class AdaptiveRobustOptimizer:
         """
         # Phase 1: Axial samples
         axial = axial_samples(
-            self.n_dims, self.sigma,
-            device=self._device, dtype=params.dtype,
+            self.n_dims,
+            self.sigma,
+            device=self._device,
+            dtype=params.dtype,
         )
         # Phase 2: Random samples based on curriculum
         n_random = int(self.n_random_budget * curriculum_frac)
@@ -325,7 +338,9 @@ class AdaptiveRobustOptimizer:
             curriculum_frac = min(1.0, step / n_steps)
 
             loss = self.compute_robust_loss(
-                params, forward_fn, perturbation_fn,
+                params,
+                forward_fn,
+                perturbation_fn,
                 curriculum_frac=curriculum_frac,
             )
 

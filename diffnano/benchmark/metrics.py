@@ -59,7 +59,7 @@ def strehl_ratio_from_phase(
     -------
     strehl : Tensor, scalar
     """
-    var = (phase_error ** 2).mean()
+    var = (phase_error**2).mean()
     return torch.exp(-var)
 
 

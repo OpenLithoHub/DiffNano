@@ -119,7 +119,8 @@ class TestPhCDesigner:
 
     def test_maximize_bandgap_short(self, designer):
         density, history = designer.maximize_bandgap(
-            n_steps=3, verbose=False,
+            n_steps=3,
+            verbose=False,
         )
         assert density.shape == (8, 8)
         assert len(history) == 3
@@ -151,7 +152,7 @@ class TestWaveguideDesigner:
         eps = designer.waveguide_eps()
         assert eps.shape == (30, 30)
         assert eps.min().item() == pytest.approx(1.0)  # clad
-        assert eps.max().item() == pytest.approx(2.5 ** 2)  # core
+        assert eps.max().item() == pytest.approx(2.5**2)  # core
 
     def test_fundamental_mode(self, designer):
         n_eff, mode = designer.fundamental_mode()
@@ -222,7 +223,9 @@ class TestBroadbandOptimizer:
 
     def test_optimize_short(self, optimizer):
         density, history = optimizer.optimize(
-            n_steps=3, target_order=0, verbose=False,
+            n_steps=3,
+            target_order=0,
+            verbose=False,
         )
         assert density.shape == (15, 15)
         assert len(history) == 3
@@ -302,7 +305,9 @@ class TestEndToEndPipeline:
 
     def test_optimize_short(self, pipeline):
         density, history = pipeline.optimize(
-            n_steps=3, lr=0.01, verbose=False,
+            n_steps=3,
+            lr=0.01,
+            verbose=False,
         )
         assert density.shape == (15, 15)
         assert len(history["total"]) == 3

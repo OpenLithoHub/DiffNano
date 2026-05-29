@@ -121,7 +121,7 @@ def _band_structure_pwe(
     H, W = density.shape
 
     # Permittivity from density
-    eps_r = n_air ** 2 + (n_material ** 2 - n_air ** 2) * density
+    eps_r = n_air**2 + (n_material**2 - n_air**2) * density
 
     # Reciprocal lattice vectors
     b1, b2 = _reciprocal_lattice_vectors(lattice, a)
@@ -173,7 +173,7 @@ def _band_structure_pwe(
         k = k_points[ki]
 
         kG = k.unsqueeze(0) + G_points  # (N_G, 2)
-        kG_sq = (kG ** 2).sum(dim=-1)  # (N_G,)
+        kG_sq = (kG**2).sum(dim=-1)  # (N_G,)
 
         if polarization == "TM":
             # TM: M_{GG'} = |k+G|^2 * eta(G-G')
@@ -274,15 +274,13 @@ class PhCDesigner:
             X = torch.tensor([pi_a, 0.0], dtype=torch.float64)
             M = torch.tensor([pi_a, pi_a], dtype=torch.float64)
 
-            k_gamma_x = torch.stack([
-                gamma + t * (X - gamma) for t in torch.linspace(0, 1, n_per_segment)
-            ])
-            k_x_m = torch.stack([
-                X + t * (M - X) for t in torch.linspace(0, 1, n_per_segment)
-            ])
-            k_m_gamma = torch.stack([
-                M + t * (gamma - M) for t in torch.linspace(0, 1, n_per_segment)
-            ])
+            k_gamma_x = torch.stack(
+                [gamma + t * (X - gamma) for t in torch.linspace(0, 1, n_per_segment)]
+            )
+            k_x_m = torch.stack([X + t * (M - X) for t in torch.linspace(0, 1, n_per_segment)])
+            k_m_gamma = torch.stack(
+                [M + t * (gamma - M) for t in torch.linspace(0, 1, n_per_segment)]
+            )
             return torch.cat([k_gamma_x, k_x_m[1:], k_m_gamma[1:]])
         else:
             # Hexagonal: Gamma -> K -> M -> Gamma
@@ -291,15 +289,13 @@ class PhCDesigner:
             K = torch.tensor([4 * pi_a / 3, 0.0], dtype=torch.float64)
             M = torch.tensor([pi_a, pi_a / math.sqrt(3)], dtype=torch.float64)
 
-            k_gamma_k = torch.stack([
-                gamma + t * (K - gamma) for t in torch.linspace(0, 1, n_per_segment)
-            ])
-            k_k_m = torch.stack([
-                K + t * (M - K) for t in torch.linspace(0, 1, n_per_segment)
-            ])
-            k_m_gamma = torch.stack([
-                M + t * (gamma - M) for t in torch.linspace(0, 1, n_per_segment)
-            ])
+            k_gamma_k = torch.stack(
+                [gamma + t * (K - gamma) for t in torch.linspace(0, 1, n_per_segment)]
+            )
+            k_k_m = torch.stack([K + t * (M - K) for t in torch.linspace(0, 1, n_per_segment)])
+            k_m_gamma = torch.stack(
+                [M + t * (gamma - M) for t in torch.linspace(0, 1, n_per_segment)]
+            )
             return torch.cat([k_gamma_k, k_k_m[1:], k_m_gamma[1:]])
 
     def band_structure(
@@ -409,9 +405,7 @@ class PhCDesigner:
             heaviside_projection,
         )
 
-        density = torch.rand(
-            *self.grid_shape, device=self._device, dtype=torch.float64
-        )
+        density = torch.rand(*self.grid_shape, device=self._device, dtype=torch.float64)
         density = density.detach().requires_grad_(True)
 
         opt = torch.optim.Adam([density], lr=lr)

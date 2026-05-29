@@ -78,8 +78,9 @@ class TestDensityField:
 class TestBSplineCurve:
     def test_rasterize_shape(self):
         bs = BSplineCurve((20, 20), pixel_size_nm=5.0, n_eval=20, beta=10.0)
-        cp = torch.tensor([[5.0, 10.0], [10.0, 5.0], [15.0, 10.0], [10.0, 15.0]],
-                          dtype=torch.float64)
+        cp = torch.tensor(
+            [[5.0, 10.0], [10.0, 5.0], [15.0, 10.0], [10.0, 15.0]], dtype=torch.float64
+        )
         mask = bs(cp)
         assert mask.shape == (20, 20)
         assert mask.min() >= 0.0
@@ -87,23 +88,26 @@ class TestBSplineCurve:
 
     def test_gradient(self):
         bs = BSplineCurve((15, 15), pixel_size_nm=5.0, n_eval=20, beta=5.0)
-        cp = torch.tensor([[5.0, 7.5], [7.5, 5.0], [10.0, 7.5], [7.5, 10.0]],
-                          dtype=torch.float64, requires_grad=True)
+        cp = torch.tensor(
+            [[5.0, 7.5], [7.5, 5.0], [10.0, 7.5], [7.5, 10.0]],
+            dtype=torch.float64,
+            requires_grad=True,
+        )
         mask = bs(cp)
         mask.sum().backward()
         assert cp.grad is not None
 
     def test_sdf_output(self):
         bs = BSplineCurve((15, 15), pixel_size_nm=5.0, n_eval=20)
-        cp = torch.tensor([[5.0, 7.5], [7.5, 5.0], [10.0, 7.5], [7.5, 10.0]],
-                          dtype=torch.float64)
+        cp = torch.tensor([[5.0, 7.5], [7.5, 5.0], [10.0, 7.5], [7.5, 10.0]], dtype=torch.float64)
         sdf = bs.sdf(cp)
         assert sdf.shape == (15, 15)
 
     def test_shift_parameter(self):
         bs = BSplineCurve((30, 30), pixel_size_nm=1.0, n_eval=30)
-        cp = torch.tensor([[10.0, 15.0], [15.0, 10.0], [20.0, 15.0], [15.0, 20.0]],
-                          dtype=torch.float64)
+        cp = torch.tensor(
+            [[10.0, 15.0], [15.0, 10.0], [20.0, 15.0], [15.0, 20.0]], dtype=torch.float64
+        )
         mask_default = bs(cp, beta=5.0)
         mask_shifted = bs(cp, shift=torch.tensor(2.0, dtype=torch.float64), beta=5.0)
         # Shifted mask should differ (feature size changed)
@@ -181,8 +185,10 @@ class TestConstraints:
         p1 = combined_fabrication_penalty(
             d,
             weights={
-                "cd": 0.0, "curvature": 0.0,
-                "binarization": 1.0, "corner": 0.0,
+                "cd": 0.0,
+                "curvature": 0.0,
+                "binarization": 1.0,
+                "corner": 0.0,
             },
         )
         p2 = binarization_penalty(d)
@@ -205,34 +211,59 @@ class TestCurvilinearMask:
         )
 
     def test_rasterize_shape(self, cmask):
-        cp = torch.tensor([
-            [25.0, 50.0], [50.0, 25.0], [75.0, 50.0], [50.0, 75.0],
-        ], dtype=torch.float64)
+        cp = torch.tensor(
+            [
+                [25.0, 50.0],
+                [50.0, 25.0],
+                [75.0, 50.0],
+                [50.0, 75.0],
+            ],
+            dtype=torch.float64,
+        )
         mask = cmask.forward(cp)
         assert mask.shape == (20, 20)
         assert mask.min() >= 0.0
         assert mask.max() <= 1.0
 
     def test_gradient_flow(self, cmask):
-        cp = torch.tensor([
-            [25.0, 50.0], [50.0, 25.0], [75.0, 50.0], [50.0, 75.0],
-        ], dtype=torch.float64, requires_grad=True)
+        cp = torch.tensor(
+            [
+                [25.0, 50.0],
+                [50.0, 25.0],
+                [75.0, 50.0],
+                [50.0, 75.0],
+            ],
+            dtype=torch.float64,
+            requires_grad=True,
+        )
         mask = cmask.forward(cp)
         mask.sum().backward()
         assert cp.grad is not None
         assert not torch.isnan(cp.grad).any(), "NaN gradient detected in CurvilinearMask"
 
     def test_sdf_output(self, cmask):
-        cp = torch.tensor([
-            [25.0, 50.0], [50.0, 25.0], [75.0, 50.0], [50.0, 75.0],
-        ], dtype=torch.float64)
+        cp = torch.tensor(
+            [
+                [25.0, 50.0],
+                [50.0, 25.0],
+                [75.0, 50.0],
+                [50.0, 75.0],
+            ],
+            dtype=torch.float64,
+        )
         sdf = cmask.sdf(cp)
         assert sdf.shape == (20, 20)
 
     def test_shift_parameter(self, cmask):
-        cp = torch.tensor([
-            [25.0, 50.0], [50.0, 25.0], [75.0, 50.0], [50.0, 75.0],
-        ], dtype=torch.float64)
+        cp = torch.tensor(
+            [
+                [25.0, 50.0],
+                [50.0, 25.0],
+                [75.0, 50.0],
+                [50.0, 75.0],
+            ],
+            dtype=torch.float64,
+        )
         mask1 = cmask.forward(cp, beta=5.0)
         mask2 = cmask.forward(cp, shift=torch.tensor(2.0, dtype=torch.float64), beta=5.0)
         assert not torch.allclose(mask1, mask2, atol=1e-3)
@@ -242,7 +273,11 @@ class TestCurvilinearMask:
             return -mask.mean() + ((mask - 0.5) ** 2).mean()
 
         cp, history = cmask.optimize(
-            n_control_points=4, loss_fn=loss_fn, n_steps=5, lr=0.01, verbose=False,
+            n_control_points=4,
+            loss_fn=loss_fn,
+            n_steps=5,
+            lr=0.01,
+            verbose=False,
         )
         assert cp.shape == (4, 2)
         assert len(history) == 5
@@ -304,7 +339,10 @@ class TestLearnedRepresentation:
             return -density.mean()
 
         result, history = vae.optimize_in_latent_space(
-            loss_fn, n_steps=5, lr=0.01, verbose=False,
+            loss_fn,
+            n_steps=5,
+            lr=0.01,
+            verbose=False,
         )
         assert result.shape == (16, 16)
         assert len(history) == 5

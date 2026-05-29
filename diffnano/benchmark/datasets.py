@@ -89,7 +89,7 @@ def metalens_devlin2016(
 
     k0 = 2 * math.pi / wavelength_nm
     f_nm = f * 1000
-    target_phase = k0 * (torch.sqrt(x ** 2 + y ** 2 + f_nm ** 2) - f_nm)
+    target_phase = k0 * (torch.sqrt(x**2 + y**2 + f_nm**2) - f_nm)
 
     return {
         "target_phase": target_phase,

@@ -46,6 +46,7 @@ __all__ = [
 # Corner specification
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class CornerSpec:
     """One deterministic perturbation corner in the optimisation sweep.
@@ -72,7 +73,7 @@ class CornerSpec:
 # ---------------------------------------------------------------------------
 
 DEFAULT_CORNERS: tuple[CornerSpec, ...] = (
-    CornerSpec("wide",   delta_nm= 5.0, weight=1.0),
+    CornerSpec("wide", delta_nm=5.0, weight=1.0),
     CornerSpec("narrow", delta_nm=-5.0, weight=1.0),
 )
 
@@ -80,6 +81,7 @@ DEFAULT_CORNERS: tuple[CornerSpec, ...] = (
 # ---------------------------------------------------------------------------
 # Corner optimisation step
 # ---------------------------------------------------------------------------
+
 
 def corner_optimization_step(
     params: torch.Tensor,

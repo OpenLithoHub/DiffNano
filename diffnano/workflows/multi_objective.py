@@ -91,7 +91,9 @@ class MultiObjectiveExplorer:
         )
 
         density = torch.rand(
-            *self.grid_shape, device=self._device, dtype=torch.float64,
+            *self.grid_shape,
+            device=self._device,
+            dtype=torch.float64,
         )
         density = density.detach().requires_grad_(True)
 
@@ -117,6 +119,7 @@ class MultiObjectiveExplorer:
         final_density = density.detach()
         with torch.no_grad():
             from diffnano.design.projection import heaviside_projection
+
             projected = heaviside_projection(final_density, beta=16.0)
             obj_values = {}
             for name, fn in self.objectives.items():
@@ -150,7 +153,7 @@ class MultiObjectiveExplorer:
         for i, weights in enumerate(weights_list):
             if verbose:
                 w_str = ", ".join(f"{k}={v:.2f}" for k, v in weights.items())
-                print(f"Point {i+1}/{self.n_pareto_points}: weights=[{w_str}]")
+                print(f"Point {i + 1}/{self.n_pareto_points}: weights=[{w_str}]")
 
             density, obj_values = self._optimize_single(weights, n_steps, lr)
             all_results.append((density, obj_values))
@@ -184,14 +187,8 @@ class MultiObjectiveExplorer:
                 if i == j:
                     continue
                 # Check if j dominates i
-                all_leq = all(
-                    obj_j[k] <= obj_i[k] + 1e-8
-                    for k in self.obj_names
-                )
-                any_lt = any(
-                    obj_j[k] < obj_i[k] - 1e-8
-                    for k in self.obj_names
-                )
+                all_leq = all(obj_j[k] <= obj_i[k] + 1e-8 for k in self.obj_names)
+                any_lt = any(obj_j[k] < obj_i[k] - 1e-8 for k in self.obj_names)
                 if all_leq and any_lt:
                     dominated = True
                     break

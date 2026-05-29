@@ -59,8 +59,11 @@ def _differentiable_shift_1d(
     grid = torch.stack([grid_x_shifted, grid_y], dim=-1).unsqueeze(0)
     input_4d = signal.unsqueeze(0).unsqueeze(0)
     output = F.grid_sample(
-        input_4d, grid,
-        mode="bilinear", padding_mode="border", align_corners=True,
+        input_4d,
+        grid,
+        mode="bilinear",
+        padding_mode="border",
+        align_corners=True,
     )
     return output.squeeze(0).squeeze(0)
 
@@ -154,7 +157,7 @@ def corner_rounding_perturbation(
         return density
     k_half = k_size // 2
     x = torch.arange(k_size, device=density.device, dtype=density.dtype) - k_half
-    kernel_1d = torch.exp(-x ** 2 / (2 * sigma ** 2))
+    kernel_1d = torch.exp(-(x**2) / (2 * sigma**2))
     kernel_1d = kernel_1d / (kernel_1d.sum() + 1e-12)
 
     padded = F.pad(
@@ -202,8 +205,7 @@ class MultiAxisPerturbation:
         pixel_size_nm: float = 5.0,
     ):
         self.sigmas = torch.tensor(
-            [sigma_linewidth_nm, sigma_sidewall_deg,
-             sigma_thickness_nm, sigma_corner_nm],
+            [sigma_linewidth_nm, sigma_sidewall_deg, sigma_thickness_nm, sigma_corner_nm],
             dtype=torch.float64,
         )
         self.pixel_size_nm = pixel_size_nm
