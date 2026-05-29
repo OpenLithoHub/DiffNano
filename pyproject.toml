@@ -25,6 +25,7 @@ dependencies = [
     "torch>=2.0",
     "numpy>=1.24",
     "scipy>=1.10",
+    "diff-surrogate @ git+https://github.com/telleroutlook/diff-surrogate.git",
 ]
 
 [project.optional-dependencies]

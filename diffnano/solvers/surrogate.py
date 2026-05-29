@@ -13,6 +13,9 @@ from collections.abc import Sequence
 import torch
 import torch.nn as nn
 
+from diff_surrogate import CorrectionPolicy
+from diff_surrogate.base import SurrogateStats
+
 from diffnano.solvers._result import SimResult
 
 __all__ = ["NeuralSurrogate"]
@@ -103,6 +106,8 @@ class NeuralSurrogate:
         self._device = torch.device(device)
         self.correction_interval = correction_interval
         self._forward_count = 0
+        self._correction_policy = CorrectionPolicy(correction_interval=correction_interval)
+        self.stats = SurrogateStats()
 
         n_fourier = base_solver.n_fourier
         self.net = _SurrogateNet(
@@ -218,8 +223,10 @@ class NeuralSurrogate:
             wavelengths = torch.tensor(wavelengths, dtype=torch.float64, device=self._device)
 
         self._forward_count += 1
+        self.stats.total_predictions += 1
 
-        if not self._trained or self._forward_count % self.correction_interval == 0:
+        if not self._trained or self._correction_policy.should_correct(self._forward_count):
+            self.stats.total_corrections += 1
             return self.base_solver.forward(geometry, wavelengths, source=source)
 
         geo = geometry.to(self._device).to(torch.float64)
