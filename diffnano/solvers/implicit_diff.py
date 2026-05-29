@@ -13,7 +13,7 @@ Helmholtz residual used by DiffNano's FDFDSolver2D.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import torch
 from torch import Tensor
@@ -304,7 +304,7 @@ def fdfd_fixed_point_gradient(
     omega = solver.omega_norm
 
     # Import the operator builders locally to avoid circular top-level deps
-    from diffnano.solvers.fdfd2d import _build_helmholtz_tm, _build_helmholtz_te
+    from diffnano.solvers.fdfd2d import _build_helmholtz_te, _build_helmholtz_tm
 
     if solver.polarization == "TM":
         build_A = _build_helmholtz_tm

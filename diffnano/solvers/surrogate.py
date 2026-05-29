@@ -12,7 +12,6 @@ from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
-
 from diff_surrogate import CorrectionPolicy
 from diff_surrogate.base import SurrogateStats
 

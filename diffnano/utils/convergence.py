@@ -14,8 +14,6 @@ Z-score of the recent loss window.
 
 from __future__ import annotations
 
-import math
-
 import torch
 
 __all__ = ["HybridZScore", "ConvergenceMonitor"]
