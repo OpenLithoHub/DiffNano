@@ -17,6 +17,7 @@ __all__ = [
     "Solver", "SimResult", "RCWASolver", "FDFDSolver2D",
     "FDTDSolver2D", "FDTDSolver3D", "NeuralSurrogate",
     "HopkinsLithoModel", "LearnedFabModel", "DifferentiableResistModel",
+    "gmres_matfree", "fdfd_fixed_point_gradient",
 ]
 
 
@@ -84,4 +85,10 @@ def __getattr__(name):
     if name == "DifferentiableResistModel":
         from diffnano.solvers.resist import DifferentiableResistModel
         return DifferentiableResistModel
+    if name == "gmres_matfree":
+        from diffnano.solvers.implicit_diff import gmres_matfree
+        return gmres_matfree
+    if name == "fdfd_fixed_point_gradient":
+        from diffnano.solvers.implicit_diff import fdfd_fixed_point_gradient
+        return fdfd_fixed_point_gradient
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -24,6 +24,9 @@ __all__ = [
     "sidewall_angle_perturbation",
     "thickness_perturbation",
     "corner_rounding_perturbation",
+    "CornerSpec",
+    "corner_optimization_step",
+    "DEFAULT_CORNERS",
 ]
 
 
@@ -44,4 +47,11 @@ def __getattr__(name):
     ):
         from diffnano.design.robustness import subspace
         return getattr(subspace, name)
+    if name in (
+        "CornerSpec",
+        "corner_optimization_step",
+        "DEFAULT_CORNERS",
+    ):
+        from diffnano.design.robustness import corner_opt
+        return getattr(corner_opt, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
