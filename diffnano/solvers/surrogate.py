@@ -103,7 +103,6 @@ class NeuralSurrogate:
     ):
         self.base_solver = base_solver
         self._device = torch.device(device)
-        self.correction_interval = correction_interval
         self._forward_count = 0
         self._correction_policy = CorrectionPolicy(correction_interval=correction_interval)
         self.stats = SurrogateStats()
@@ -175,7 +174,7 @@ class NeuralSurrogate:
         for epoch in range(n_epochs):
             perm = torch.randperm(n_samples)
             batch_size = min(32, n_samples)
-            epoch_loss = 0.0
+            epoch_loss = torch.zeros((), device=self._device)
             n_batches = 0
 
             for start in range(0, n_samples, batch_size):
@@ -189,10 +188,10 @@ class NeuralSurrogate:
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-                epoch_loss += loss.item()
+                epoch_loss = epoch_loss + loss.detach()
                 n_batches += 1
 
-            loss_history.append(epoch_loss / max(1, n_batches))
+            loss_history.append((epoch_loss / max(1, n_batches)).item())
 
             if verbose and epoch % 10 == 0:
                 print(f"Epoch {epoch}: loss={loss.item():.6f}")
