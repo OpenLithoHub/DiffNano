@@ -15,7 +15,7 @@ from pathlib import Path
 
 import torch
 
-from diffnano.design.robustness.adaptive import AdaptiveRobustOptimizer
+from diffnano.design.robustness import AdaptiveRobustOptimizer
 from diffnano.design.robustness.core import robust_gradient_step
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
