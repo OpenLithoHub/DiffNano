@@ -61,22 +61,49 @@ All solvers are **PyTorch-native** — run on CPU/GPU/MPS, integrate with Adam, 
 
 ## Quick Start
 
-### Metalens Optimization
+**Zero cloud dependencies. Runs on your laptop. CPU only.**
 
-```python
-from diffnano import MetalensDesigner
+### Installation
 
-designer = MetalensDesigner(
-    wavelength_nm=532.0,
-    numerical_aperture=0.8,
-    diameter_um=50.0,
-    pixel_size_nm=200.0,
-)
-height_map, loss_history = designer.optimize(n_steps=500)
-designer.export_gds("metalens.gds", height_map)
+```bash
+# From source (requires Python 3.10+, PyTorch 2.0+)
+pip install -e .
 ```
 
-### DFM-Aware Metalens (Co-Design)
+### 5-Minute Metalens Optimization
+
+```python
+import torch
+from diffnano import MetalensDesigner
+
+# Small metalens: 20x20 grid, runs in ~1 second on CPU
+designer = MetalensDesigner(
+    wavelength_nm=532.0,
+    numerical_aperture=0.3,
+    diameter_um=4.0,       # 20 pixels × 200 nm
+    pixel_size_nm=200.0,
+    fourier_orders=5,
+    device="cpu",
+)
+height_map, loss_history = designer.optimize(n_steps=100, verbose=True)
+
+strehl = designer.strehl_ratio(height_map).item()
+print(f"Final loss:  {loss_history[-1]:.6f}")
+print(f"Strehl ratio: {strehl:.4f}")
+print(f"Grid:         {height_map.shape}")
+```
+
+**Expected output** (AMD Ryzen 5600G, CPU, ~1 s wall time):
+
+```
+Step    0: loss=1.733996, Strehl=0.1764, beta=1.0
+Step   50: loss=0.936656, Strehl=0.3924, beta=33.2
+Final loss:  0.889414
+Strehl ratio: 0.4112
+Grid:         (20, 20)
+```
+
+### DFM-Aware Metalens (Optics + Lithography Co-Design)
 
 ```python
 from diffnano import DFMMetalensDesigner
@@ -84,42 +111,47 @@ from diffnano import DFMMetalensDesigner
 designer = DFMMetalensDesigner(
     wavelength_nm=940.0,
     numerical_aperture=0.3,
-    diameter_um=10.0,
+    diameter_um=2.0,       # 20 × 100 nm pixels
     pixel_size_nm=100.0,
+    fourier_orders=3,
+    device="cpu",
 )
-density, history, breakdown = designer.optimize(n_steps=200)
+density, history, breakdown = designer.optimize(n_steps=50, verbose=False)
+print(f"Optical loss: {breakdown['optical'][-1]:.3f}")
+print(f"Litho EPE:    {breakdown['litho'][-1]:.3f} nm")
 ```
 
-### Photonic Crystal Bandgap
+**Expected output** (CPU, ~1 s):
+
+```
+Optical loss: ~0.6
+Litho EPE:    ~1.8 nm
+```
+
+### More Examples
 
 ```python
+# Photonic crystal bandgap maximization
 from diffnano import PhCDesigner
-
 phc = PhCDesigner(lattice="hexagonal", n_air=1.0, n_material=3.5)
-density, history = phc.maximize_bandgap(n_steps=200)
-```
+density, history = phc.maximize_bandgap(n_steps=100)
 
-### Broadband Multi-Wavelength
-
-```python
+# Broadband multi-wavelength optimization
 from diffnano import RCWASolver, BroadbandOptimizer
-
-solver = RCWASolver(fourier_orders=10, wavelength_nm=532.0)
+solver = RCWASolver(fourier_orders=5, wavelength_nm=532.0)
 optimizer = BroadbandOptimizer(
-    solver, wavelengths_nm=[500.0, 532.0, 600.0], grid_shape=(32, 32),
+    solver, wavelengths_nm=[500.0, 532.0, 600.0], grid_shape=(16, 16),
 )
-density, history = optimizer.optimize(n_steps=200)
+density, history = optimizer.optimize(n_steps=100)
 ```
 
----
-
-## Installation
+### Installation (Full)
 
 ```bash
 # Core
 pip install -e .
 
-# GPU support
+# GPU support (optional)
 pip install -e ".[cuda]"   # CUDA 12+
 pip install -e ".[mps]"    # Apple Silicon
 
