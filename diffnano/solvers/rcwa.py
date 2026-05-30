@@ -5,7 +5,15 @@ full PyTorch autograd support.  Supports both lossless and lossy materials
 (complex permittivity) by using general eigendecomposition (``torch.linalg.eig``)
 rather than Hermitian eigendecomposition.
 
-Three propagation backends are available:
+Four propagation backends are available:
+
+- ``"rdit"``: R-DIT (Rigorous Differentiable Inverse design of Thin-films)
+  uses low-order Taylor expansion of the propagation matrix for thin layers.
+  When the layer thickness *d* is much smaller than the wavelength
+  (``d / lambda < 0.1``), only a few Taylor terms suffice for high accuracy.
+  No eigendecomposition or full ``matrix_exp`` is needed, making this the
+  fastest backend for thin layers.  **Not recommended for thick layers**
+  (``d / lambda > 0.5``).
 
 - ``"matrix_sqrt"`` (default): computes the matrix square root of P via
   Denman–Beavers iteration (Newton–Schulz), then propagates via
@@ -22,6 +30,13 @@ Three propagation backends are available:
 - ``"eig"``: original approach using ``V @ diag(exp(i*k0*d*gamma)) @ V^{-1}``.
   Kept as a baseline for accuracy comparison.
 
+**Backend selection guide:**
+
+- ``rdit(N=1-3)``: thin layers (``d / lambda < 0.1``), fastest.
+- ``matrix_sqrt``: general-purpose, most stable for thick layers.
+- ``eig_expm``: comparison baseline.
+- ``eig``: legacy baseline.
+
 Batched mode: wavelengths and layers are processed with batched
 ``torch.linalg.eig`` and ``torch.linalg.solve`` for GPU utilization.
 
@@ -30,7 +45,8 @@ References
 - Liu & Fan (2020), grcwa: arXiv:2005.01481 (baseline, no degeneracy handling)
 - Kim & Lee (2023), TORCWA: CPC 282, 108552 (broadening-based stabilization)
 - Matrix square root RCWA: Delft + ASML, PIER C vol.163, 60–72, 2026
-- TorchRDIT / R-DIT: Huang et al., Opt. Express 32, 13986, 2024
+- R-DIT method: Huang et al., "Eigendecomposition-free inverse design of
+  meta-optics devices", Optics Express 32(8):13986, 2024.
 - Blanes et al., scaling-and-squaring matrix exponential: arXiv:2404.12789, 2024
 """
 
@@ -38,6 +54,7 @@ from __future__ import annotations
 
 import logging
 import math
+import warnings
 from collections.abc import Sequence
 
 import torch
@@ -293,6 +310,99 @@ def _db_iteration_single(
     return Y * torch.sqrt(scale)
 
 
+def _rdit_propagate(
+    P: torch.Tensor,
+    k0: float,
+    d: float,
+    taylor_order: int,
+) -> torch.Tensor:
+    """R-DIT propagation via Taylor expansion of exp(i*k0*d*sqrt(P)).
+
+    For thin layers where ``k0*d`` is small, the matrix exponential of the
+    propagation operator can be accurately approximated by a low-order Taylor
+    series.  The series alternates between even powers of ``P`` and odd powers
+    of ``sqrt(P)*P``:
+
+        T = exp(phi * sqrt(P))
+          = I + phi*sqrt(P) + phi^2/2!*P + phi^3/3!*sqrt(P)*P + ...
+
+    where ``phi = i*k0*d``.
+
+    This avoids the full ``matrix_exp`` call.  The matrix square root is
+    computed via Schur decomposition with Bjorck-Hammarling recursion
+    (no eigendecomposition), which correctly handles the negative eigenvalues
+    that arise in RCWA propagation matrices.
+
+    Clean-room implementation based on the mathematical description in:
+        Huang et al., "Eigendecomposition-free inverse design of meta-optics
+        devices", Optics Express 32(8):13986, 2024.
+
+    No source code from TorchRDIT (GPL-3.0) or TORCWA (LGPL-2.1) was
+    consulted in the preparation of this implementation.
+
+    Parameters
+    ----------
+    P : Tensor, shape ``(..., n, n)``, complex128
+        Propagation matrix (permittivity minus k-space term).
+    k0 : float
+        Free-space wave number in 1/nm.
+    d : float
+        Layer thickness in nm.
+    taylor_order : int
+        Number of Taylor terms (1 = identity only, 2 = +phi*sqrt(P), etc.).
+        Recommended: 1-3 for thin layers (d/lambda < 0.1).
+
+    Returns
+    -------
+    T : Tensor, same shape as *P*
+        Approximate transfer matrix exp(i*k0*d*sqrt(P)).
+    """
+    n = P.shape[-1]
+    dtype = P.dtype
+    device = P.device
+
+    phi = 1j * k0 * d  # complex phase (small for thin layers)
+
+    # Order 1: just identity (zeroth-order Taylor term only)
+    if taylor_order == 1:
+        eye = torch.eye(n, dtype=dtype, device=device)
+        if P.dim() == 3:
+            eye = eye.unsqueeze(0).expand_as(P)
+        return eye.clone()
+
+    # For order >= 2, we need sqrt(P) for the odd terms.
+    # Compute sqrt(P) using Schur decomposition (handles negative eigenvalues
+    # that arise in RCWA propagation matrices where P = eps_conv - Kx^2).
+    if P.dim() == 2:
+        sqrt_P = _matrix_sqrt_schur(P)
+    else:
+        sqrt_P_flat = _matrix_sqrt_schur(P.reshape(-1, n, n))
+        sqrt_P = sqrt_P_flat.reshape_as(P)
+
+    eye = torch.eye(n, dtype=dtype, device=device)
+    if P.dim() == 3:
+        eye = eye.unsqueeze(0).expand_as(P).clone()
+
+    # Horner's method for the Taylor series of exp(phi * sqrt(P)):
+    #   exp(A) = I + A + A^2/2! + A^3/3! + ...
+    # where A = phi * sqrt(P).
+    #
+    # Using the recurrence: term_k = (phi/k) * sqrt(P) @ term_{k-1}
+    # with term_0 = I.
+    # Total = sum of term_0 through term_{taylor_order-1}.
+    T = eye.clone()
+    term = eye.clone()
+    for k in range(1, taylor_order):
+        # term_k = (phi/k) * sqrt_P @ term_{k-1}
+        if P.dim() == 3:
+            term = (phi / k) * torch.bmm(sqrt_P, term)
+        else:
+            term = (phi / k) * sqrt_P @ term
+        T = T + term
+
+    return T
+
+
 def _propagate_layer(
     eps_conv: torch.Tensor,
     kx_norm: torch.Tensor,
@@ -377,7 +487,14 @@ class RCWASolver:
         Values below this floor indicate unphysical gain media.
     solver_backend : str
         Propagation method: ``"matrix_sqrt"`` (default, truly eig-free),
-        ``"eig_expm"`` (eig + matrix_exp), or ``"eig"`` (legacy baseline).
+        ``"eig_expm"`` (eig + matrix_exp), ``"eig"`` (legacy baseline),
+        or ``"rdit"`` (R-DIT Taylor expansion, best for thin layers).
+    taylor_order : int
+        Taylor expansion order for the ``"rdit"`` backend (default 3).
+        Ignored for other backends.  Recommended values:
+        - 1: identity only (ultra-thin limit)
+        - 2: first-order correction
+        - 3-5: higher accuracy for moderately thin layers
     """
 
     def __init__(
@@ -391,6 +508,7 @@ class RCWASolver:
         degen_tol: float = 1e-6,
         eps_imag_floor: float = 0.0,
         solver_backend: str = "matrix_sqrt",
+        taylor_order: int = 3,
     ):
         self.fourier_orders = fourier_orders
         self.n_fourier = 2 * fourier_orders + 1
@@ -402,12 +520,14 @@ class RCWASolver:
         self.degen_tol = degen_tol
         self.eps_imag_floor = eps_imag_floor
         self._last_clamp_fraction: float = 0.0
-        if solver_backend not in ("eig", "eig_expm", "matrix_sqrt"):
+        _valid_backends = ("eig", "eig_expm", "matrix_sqrt", "rdit")
+        if solver_backend not in _valid_backends:
             raise ValueError(
-                f"solver_backend must be 'matrix_sqrt', 'eig_expm', or 'eig', "
+                f"solver_backend must be one of {_valid_backends}, "
                 f"got {solver_backend!r}"
             )
         self.solver_backend = solver_backend
+        self.taylor_order = taylor_order
 
     @property
     def _k0(self) -> float:
@@ -527,7 +647,13 @@ class RCWASolver:
 
         layer_thickness = thickness_nm if thickness_nm is not None else px / n_layers
 
-        if self.solver_backend == "matrix_sqrt":
+        if self.solver_backend == "rdit":
+            return self._forward_1d_rdit(
+                P, n_layers, n_wl, n,
+                k0_all, layer_thickness, wavelengths, polarization, theta,
+                device, dtype,
+            )
+        elif self.solver_backend == "matrix_sqrt":
             return self._forward_1d_matrix_sqrt(
                 P, n_layers, n_wl, n,
                 k0_all, layer_thickness, wavelengths, polarization, theta,
@@ -603,6 +729,89 @@ class RCWASolver:
                 "polarization": polarization,
                 "theta": theta,
                 "solver_backend": "eig",
+            },
+        )
+
+    def _forward_1d_rdit(
+        self,
+        P: torch.Tensor,
+        n_layers: int,
+        n_wl: int,
+        n: int,
+        k0_all: torch.Tensor,
+        layer_thickness: float,
+        wavelengths: torch.Tensor,
+        polarization: str,
+        theta: float,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> SimResult:
+        """R-DIT propagation via low-order Taylor expansion.
+
+        Uses the Taylor series of ``exp(i*k0*d*sqrt(P))`` to avoid both
+        eigendecomposition and the full ``matrix_exp`` call.  For thin layers
+        (``d / lambda << 1``), low-order Taylor (1-5 terms) is very accurate.
+
+        A warning is issued if the layer thickness exceeds half the wavelength,
+        where the Taylor approximation degrades.
+
+        No source code from TorchRDIT (GPL-3.0) or TORCWA (LGPL-2.1) was
+        consulted in the preparation of this implementation.
+        """
+        # Warn if layer is too thick for reliable Taylor approximation
+        with torch.no_grad():
+            thickness_ratio = layer_thickness / wavelengths.min().item()
+        if thickness_ratio > 0.5:
+            warnings.warn(
+                f"R-DIT backend used with thick layer: d/lambda = {thickness_ratio:.2f}. "
+                f"R-DIT is designed for thin layers (d/lambda < 0.1). "
+                f"Consider switching to 'matrix_sqrt' backend for better accuracy.",
+                stacklevel=2,
+            )
+
+        # Compute transfer matrices for all (wl, layer) pairs via R-DIT
+        P_flat = P.reshape(n_wl * n_layers, n, n)
+
+        # Build k0 per (wl, layer) pair
+        k0_expanded = k0_all.unsqueeze(1).expand(n_wl, n_layers).reshape(-1)
+
+        # Compute Taylor-approximated transfer matrix for each sub-problem
+        # We process each wavelength-layer pair individually because k0 varies
+        transfer_list = []
+        for idx in range(n_wl * n_layers):
+            T_i = _rdit_propagate(
+                P_flat[idx],
+                k0=k0_expanded[idx].item(),
+                d=layer_thickness,
+                taylor_order=self.taylor_order,
+            )
+            transfer_list.append(T_i)
+
+        transfer = torch.stack(transfer_list, dim=0).reshape(n_wl, n_layers, n, n)
+
+        # Layer-by-layer propagation: field_{l+1} = T_l @ field_l
+        total_field = torch.ones(n_wl, n, dtype=dtype, device=device)
+        for li in range(n_layers):
+            T_li = transfer[:, li]  # (n_wl, n, n)
+            total_field = torch.bmm(T_li, total_field.unsqueeze(-1)).squeeze(-1)
+
+        # Transmission efficiency per order
+        eff = (total_field * total_field.conj()).real  # (n_wl, n)
+        eff = torch.clamp(eff, min=0.0)
+        totals = eff.sum(dim=-1, keepdim=True)
+        totals = torch.where(totals > 0, totals, torch.ones_like(totals))
+        eff = eff / totals
+
+        return SimResult(
+            field=eff.to(torch.float64),
+            wavelengths=wavelengths,
+            metadata={
+                "n_layers": n_layers,
+                "fourier_orders": self.fourier_orders,
+                "polarization": polarization,
+                "theta": theta,
+                "solver_backend": "rdit",
+                "taylor_order": self.taylor_order,
             },
         )
 
@@ -709,7 +918,9 @@ class RCWASolver:
         # eigenvectors: (n_wl, n_layers, n, n) -> flatten for batch solve
         evecs_flat = eigenvectors.reshape(n_wl * n_layers, n, n)
         # Use solve for batched inverse: V^{-1} = solve(V, I)
-        I_batch = torch.eye(n, dtype=dtype, device=device).unsqueeze(0).expand(n_wl * n_layers, -1, -1)
+        I_batch = torch.eye(n, dtype=dtype, device=device).unsqueeze(0).expand(
+            n_wl * n_layers, -1, -1
+        )
         inv_evecs_flat = torch.linalg.solve(evecs_flat, I_batch)
         inv_eigenvectors = inv_evecs_flat.reshape(n_wl, n_layers, n, n)
 

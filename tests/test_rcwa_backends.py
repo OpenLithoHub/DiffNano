@@ -1,4 +1,4 @@
-"""Stress tests for RCWA backends: degeneracy and thick-layer stability.
+"""Stress tests for RCWA backends: degeneracy, thick-layer stability, and R-DIT.
 
 Verifies that:
 1. The matrix_sqrt backend handles degenerate eigenvalue structures
@@ -9,6 +9,10 @@ Verifies that:
 4. Gain-layer (negative imaginary eps) is clamped without NaN/Inf.
 5. Denman-Beavers matrix sqrt agrees with Schur-based sqrt.
 6. Gradient consistency between matrix_sqrt and eig backends after clamping.
+7. R-DIT (Taylor expansion) backend agrees with eig for thin layers.
+8. R-DIT issues a warning when used with thick layers.
+9. Higher Taylor orders improve R-DIT accuracy.
+10. All four backends produce consistent results for thin layers.
 """
 
 import pytest
@@ -79,7 +83,9 @@ class TestDegeneracyStress:
         loss = result.field[:, solver_matrix_sqrt.fourier_orders].sum()
         loss.backward()
         assert eps.grad is not None
-        assert torch.isfinite(eps.grad).all(), "NaN in matrix_sqrt gradient on lossy degenerate input"
+        assert torch.isfinite(eps.grad).all(), (
+            "NaN in matrix_sqrt gradient on lossy degenerate input"
+        )
 
     def test_backward_agreement_all_backends(self):
         """All three backends produce physically equivalent forward results.
@@ -249,3 +255,224 @@ def test_gain_layer_gradient_consistency():
         flat_sqrt.unsqueeze(0), flat_eig.unsqueeze(0)
     ).item()
     assert cos_sim > 0.99, f"Gradient direction cosine {cos_sim:.4f} < 0.99"
+
+
+# ---------------------------------------------------------------------------
+# R-DIT (Taylor expansion) backend tests
+# ---------------------------------------------------------------------------
+
+ALL_BACKENDS = ["matrix_sqrt", "eig_expm", "eig", "rdit"]
+
+
+def _thin_layer_grating(n_layers: int = 3, n_grid: int = 80) -> torch.Tensor:
+    """Simple grating suitable for thin-layer R-DIT testing.
+
+    Uses a low-contrast permittivity profile to keep P well-conditioned.
+    """
+    x = torch.linspace(0, 2 * torch.pi, n_grid, dtype=torch.float64)
+    eps = 2.0 + 0.5 * torch.cos(2 * x)
+    return eps.unsqueeze(0).expand(n_layers, -1).clone()
+
+
+def test_rdit_thin_layer_vs_eig():
+    """R-DIT (taylor_order >= 3) agrees with eig for thin layers."""
+    eps = _thin_layer_grating(3, 80)
+
+    solver_eig = RCWASolver(
+        fourier_orders=3,
+        wavelength_nm=532.0,
+        period_nm=(400.0, 400.0),
+        solver_backend="eig",
+    )
+    solver_rdit = RCWASolver(
+        fourier_orders=3,
+        wavelength_nm=532.0,
+        period_nm=(400.0, 400.0),
+        solver_backend="rdit",
+        taylor_order=5,
+    )
+
+    with torch.no_grad():
+        result_eig = solver_eig.forward(
+            eps.clone(),
+            wavelengths=[532.0],
+            source={"thickness_nm": 10.0},  # d/lambda ~ 0.019, very thin
+        )
+        result_rdit = solver_rdit.forward(
+            eps.clone(),
+            wavelengths=[532.0],
+            source={"thickness_nm": 10.0},
+        )
+
+    # Compare sorted efficiencies (order permutation may differ).
+    # The matrix_sqrt and eig families have a known ~12% discrepancy
+    # (see test_backward_agreement_all_backends, tolerance 0.1).
+    # R-DIT uses Schur sqrt, so we expect similar tolerance vs eig.
+    eff_eig = result_eig.field.sort().values
+    eff_rdit = result_rdit.field.sort().values
+    rel_err = (eff_eig - eff_rdit).abs().max() / (eff_eig.abs().max() + 1e-12)
+    assert rel_err < 0.15, (
+        f"R-DIT vs eig disagreement for thin layer: rel_err={rel_err:.6f}"
+    )
+
+
+def test_rdit_thick_layer_warning():
+    """R-DIT warns when used with thick layers (d/lambda > 0.5)."""
+    solver = RCWASolver(
+        fourier_orders=3,
+        wavelength_nm=532.0,
+        period_nm=(400.0, 400.0),
+        solver_backend="rdit",
+        taylor_order=3,
+    )
+    eps = _thin_layer_grating(3, 80)
+
+    with pytest.warns(UserWarning, match="R-DIT backend used with thick layer"):
+        solver.forward(
+            eps,
+            wavelengths=[532.0],
+            source={"thickness_nm": 400.0},  # d/lambda ~ 0.75
+        )
+
+
+def test_rdit_order_convergence():
+    """Higher Taylor order improves accuracy for R-DIT on thin layers."""
+    eps = _thin_layer_grating(3, 80)
+
+    solver_ref = RCWASolver(
+        fourier_orders=3,
+        wavelength_nm=532.0,
+        period_nm=(400.0, 400.0),
+        solver_backend="matrix_sqrt",
+    )
+    with torch.no_grad():
+        result_ref = solver_ref.forward(
+            eps.clone(),
+            wavelengths=[532.0],
+            source={"thickness_nm": 20.0},  # d/lambda ~ 0.038
+        )
+    eff_ref = result_ref.field.sort().values
+
+    errors = {}
+    for order in [2, 3, 5]:
+        solver = RCWASolver(
+            fourier_orders=3,
+            wavelength_nm=532.0,
+            period_nm=(400.0, 400.0),
+            solver_backend="rdit",
+            taylor_order=order,
+        )
+        with torch.no_grad():
+            result = solver.forward(
+                eps.clone(),
+                wavelengths=[532.0],
+                source={"thickness_nm": 20.0},
+            )
+        eff = result.field.sort().values
+        errors[order] = (eff_ref - eff).abs().max().item()
+
+    # Higher order should not be worse
+    assert errors[5] <= errors[2] + 1e-10, (
+        f"Order 5 error ({errors[5]:.6e}) not <= order 2 error ({errors[2]:.6e})"
+    )
+
+
+def test_four_backend_crosscheck_thin_layer():
+    """All four backends produce consistent results for thin layers."""
+    eps = _thin_layer_grating(3, 80)
+    thin_d = 10.0  # nm, d/lambda ~ 0.019
+
+    results = {}
+    for backend in ALL_BACKENDS:
+        kwargs = dict(
+            fourier_orders=3,
+            wavelength_nm=532.0,
+            period_nm=(400.0, 400.0),
+            solver_backend=backend,
+        )
+        if backend == "rdit":
+            kwargs["taylor_order"] = 5
+        solver = RCWASolver(**kwargs)
+        with torch.no_grad():
+            r = solver.forward(
+                eps.clone(),
+                wavelengths=[532.0],
+                source={"thickness_nm": thin_d},
+            )
+        results[backend] = r.field.sort().values
+
+    # Two families: {eig, eig_expm} and {matrix_sqrt, rdit}
+    # Within each family, agreement should be very tight.
+    # Between families, the known sqrt-method discrepancy allows ~15%.
+
+    # Within-family checks (tight tolerance)
+    eig_vs_eig_expm = (
+        results["eig"] - results["eig_expm"]
+    ).abs().max() / (results["eig"].abs().max() + 1e-12)
+    sqrt_vs_rdit = (
+        results["matrix_sqrt"] - results["rdit"]
+    ).abs().max() / (results["matrix_sqrt"].abs().max() + 1e-12)
+    assert eig_vs_eig_expm < 0.01, (
+        f"eig vs eig_expm mismatch: rel_err={eig_vs_eig_expm:.4f}"
+    )
+    assert sqrt_vs_rdit < 0.01, (
+        f"matrix_sqrt vs rdit mismatch: rel_err={sqrt_vs_rdit:.4f}"
+    )
+
+    # Cross-family checks (looser tolerance, known discrepancy)
+    for eig_family in ["eig", "eig_expm"]:
+        for sqrt_family in ["matrix_sqrt", "rdit"]:
+            a = results[eig_family]
+            b = results[sqrt_family]
+            rel_err = (a - b).abs().max() / (a.abs().max() + 1e-12)
+            assert rel_err < 0.15, (
+                f"Cross-family mismatch {eig_family} vs {sqrt_family}: "
+                f"rel_err={rel_err:.4f}"
+            )
+
+
+def test_rdit_gradient_no_nan_thin_layer():
+    """R-DIT produces finite gradients for thin layers."""
+    solver = RCWASolver(
+        fourier_orders=3,
+        wavelength_nm=532.0,
+        period_nm=(400.0, 400.0),
+        solver_backend="rdit",
+        taylor_order=3,
+    )
+    eps = _thin_layer_grating(3, 80).detach().requires_grad_(True)
+    result = solver.forward(
+        eps,
+        wavelengths=[532.0],
+        source={"thickness_nm": 10.0},
+    )
+    loss = result.field[:, solver.fourier_orders].sum()
+    loss.backward()
+    assert eps.grad is not None
+    assert torch.isfinite(eps.grad).all(), "NaN in R-DIT gradient for thin layer"
+
+
+def test_rdit_order_1_is_identity_like():
+    """R-DIT order 1 (just identity) produces uniform efficiency for thin layers."""
+    solver = RCWASolver(
+        fourier_orders=3,
+        wavelength_nm=532.0,
+        period_nm=(400.0, 400.0),
+        solver_backend="rdit",
+        taylor_order=1,
+    )
+    eps = _thin_layer_grating(3, 80)
+    result = solver.forward(
+        eps,
+        wavelengths=[532.0],
+        source={"thickness_nm": 5.0},
+    )
+    # With T = I for every layer, output should be ones normalized
+    # So all efficiencies should be equal (1/n_fourier each)
+    eff = result.field
+    assert torch.isfinite(eff).all()
+    # All efficiencies should be approximately equal
+    mean_eff = eff.mean()
+    assert (eff - mean_eff).abs().max() < 0.05, (
+        "R-DIT order 1 should produce near-uniform efficiency"
+    )
