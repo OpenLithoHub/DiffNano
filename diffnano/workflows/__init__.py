@@ -8,6 +8,7 @@ __all__ = [
     "BroadbandOptimizer",
     "MultiObjectiveExplorer",
     "EndToEndPipeline",
+    "SplitterDesigner",
 ]
 
 
@@ -40,4 +41,8 @@ def __getattr__(name):
         from diffnano.workflows.end_to_end import EndToEndPipeline
 
         return EndToEndPipeline
+    if name == "SplitterDesigner":
+        from diffnano.workflows.splitter import SplitterDesigner
+
+        return SplitterDesigner
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
