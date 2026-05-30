@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 import torch
 
@@ -147,7 +148,8 @@ def run_c5_benchmark(
         "robust_base_strehl": strehl_robust_base,
     }
 
-    with open("benchmark_c5_results.json", "w") as f:
+    REPO = Path(__file__).resolve().parents[1]
+    with open(REPO / "benchmark_c5_results.json", "w") as f:
         json.dump(results, f, indent=2)
     print("\nResults saved to benchmark_c5_results.json")
 

@@ -82,10 +82,9 @@ class EndToEndPipeline:
             "constraint_loss": ..., "field": ...}``
         """
         from diffnano.design.constraints_shared import combined_fabrication_penalty
-        from diffnano.design.projection import heaviside_projection
 
-        # Binarize density
-        binary = heaviside_projection(density, beta=16.0)
+        # Caller is responsible for projection
+        binary = density
 
         # Fabrication model forward
         if self.fab_model is not None:
@@ -110,12 +109,15 @@ class EndToEndPipeline:
             H, W = density.shape
             n_layers = min(5, H)
             layer_h = H // n_layers
+            remainder = H % n_layers
             layers = []
+            y0 = 0
             for i in range(n_layers):
-                y0 = i * layer_h
-                y1 = min((i + 1) * layer_h, H)
+                extra = 1 if i < remainder else 0
+                y1 = min(y0 + layer_h + extra, H)
                 avg = printed[y0:y1, :].mean(dim=0)
                 layers.append(self.eps_low + (self.eps_high - self.eps_low) * avg)
+                y0 = y1
 
             geometry = torch.stack(layers)
             result = self.solver.forward(geometry, wavelengths=self.wavelengths_nm)

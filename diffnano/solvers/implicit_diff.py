@@ -65,6 +65,7 @@ def gmres_matfree(
     dtype = b.dtype
     device = b.device
     b_norm: Tensor = b.norm()
+    tol_bnorm = (tol * b_norm).item()
     if b_norm == 0:
         return torch.zeros_like(b), 0
 
@@ -171,7 +172,7 @@ def gmres_matfree(
             j_used = j + 1
 
             # Check convergence via residual estimate in transformed basis
-            if abs(e1[j + 1].item()) < tol * b_norm.item():
+            if e1[j + 1].abs() < tol_bnorm:
                 converged = True
                 break
 
@@ -239,6 +240,8 @@ def fdfd_fixed_point_gradient(
     loss_grad: Tensor,
     tol: float = 1e-6,
     max_iter: int = 200,
+    E_star: Tensor | None = None,
+    source: dict | None = None,
 ) -> Tensor:
     """Compute dL/d(eps_r) via the implicit function theorem at the FDFD solution.
 
@@ -290,8 +293,11 @@ def fdfd_fixed_point_gradient(
         eps_r = eps_r.squeeze(0)
 
     # --- Run the forward solve to get E* (detached) -----------------------
-    result = solver.forward(eps_r)
-    E_star = result.field.reshape(-1).detach()  # (N,), complex128, no grad
+    if E_star is None:
+        result = solver.forward(eps_r)
+        E_star = result.field.reshape(-1).detach()  # (N,), complex128, no grad
+    else:
+        E_star = E_star.to(device).reshape(-1).detach()
 
     # Flatten loss_grad to (N,) complex to match field dtype
     dL_dE = loss_grad.to(device).reshape(-1)
@@ -319,10 +325,10 @@ def fdfd_fixed_point_gradient(
         return build_A(omega, eps_r_arg, solver.dl, pml_params)
 
     # --- Build the source vector b (mirrors FDFDSolver2D.forward) ---------
-    # Default point source at grid centre — same default as forward()
+    src = source or {}
     dtype_c = torch.complex128
     b = torch.zeros(N, dtype=dtype_c, device=device)
-    pos = [H // 2, W // 2]
+    pos = src.get("pos", [H // 2, W // 2])
     idx = pos[0] * W + pos[1]
     b[idx] = 1.0
 

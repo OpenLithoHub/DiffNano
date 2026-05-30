@@ -329,6 +329,8 @@ class BSplineCurve:
         SDF threshold for binarization (default 0 → exact boundary).
     beta : float
         Sigmoid sharpness for soft binarization.
+    device : str or torch.device
+        Device on which to create coordinate grids (default ``"cpu"``).
     """
 
     def __init__(
@@ -338,17 +340,19 @@ class BSplineCurve:
         n_eval: int = 100,
         threshold: float = 0.0,
         beta: float = 10.0,
+        device: str | torch.device = "cpu",
     ):
         self.grid_shape = grid_shape
         self.pixel_size_nm = pixel_size_nm
         self.n_eval = n_eval
         self.threshold = threshold
         self.beta = beta
+        self._device = torch.device(device)
 
-        # Pre-compute coordinate grids
+        # Pre-compute coordinate grids on target device
         H, W = grid_shape
-        y_coords = torch.arange(H, dtype=torch.float64) * pixel_size_nm
-        x_coords = torch.arange(W, dtype=torch.float64) * pixel_size_nm
+        y_coords = torch.arange(H, dtype=torch.float64, device=self._device) * pixel_size_nm
+        x_coords = torch.arange(W, dtype=torch.float64, device=self._device) * pixel_size_nm
         self.grid_y, self.grid_x = torch.meshgrid(y_coords, x_coords, indexing="ij")
 
     def forward(

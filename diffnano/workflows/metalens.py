@@ -97,7 +97,7 @@ class MetalensDesigner:
         self.solver = RCWASolver(
             fourier_orders=fourier_orders,
             wavelength_nm=wavelength_nm,
-            period_nm=(pixel_size_nm, pixel_size_nm),
+            period_nm=(diameter_um * 1000, diameter_um * 1000),
             eps_ambient=n_ambient**2,
             eps_substrate=n_ambient**2,
             device=self.device,
@@ -275,6 +275,8 @@ class MetalensDesigner:
                 height_map.grad = apply_mask(height_map.grad, designable_mask)
 
             opt.step()
+            with torch.no_grad():
+                height_map.clamp_(min=0.0)
 
             loss_val = loss.item()
             loss_history.append(loss_val)

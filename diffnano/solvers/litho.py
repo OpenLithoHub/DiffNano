@@ -75,6 +75,7 @@ class HopkinsLithoModel:
         # Pre-compute PSF kernels for partially coherent illumination
         self._kernels: list[torch.Tensor] = []
         self._initialized = False
+        self._cache_key: tuple[int, ...] | None = None
 
     def _initialize_kernels(self, grid_size: int) -> None:
         """Compute PSF kernels for different source points.
@@ -101,6 +102,7 @@ class HopkinsLithoModel:
             ).tolist()
 
         self._kernels = []
+        self._cache_key = (grid_size, grid_size)
         for offset in source_offsets:
             coords = torch.arange(psf_size, device=device, dtype=dtype) - psf_radius_px
             x = coords * self.pixel_size_nm  # in nm
@@ -133,7 +135,8 @@ class HopkinsLithoModel:
         -------
         image : Tensor, shape ``(H, W)``
         """
-        if not self._kernels:
+        current_key = (mask.shape[-2], mask.shape[-1])
+        if not self._kernels or self._cache_key != current_key:
             self._initialize_kernels(mask.shape[-1])
 
         H, W = mask.shape
@@ -154,7 +157,7 @@ class HopkinsLithoModel:
 
         # Normalize (avoid GPU sync — use tensor operations)
         img_max = image.max()
-        image = image / (img_max + 1e-12)
+        image = image / img_max.clamp(min=1e-6)
 
         return image
 
@@ -183,7 +186,7 @@ class HopkinsLithoModel:
     def forward(self, mask: torch.Tensor) -> dict[str, torch.Tensor]:
         """Full forward pass: mask → aerial image → printed contour + EPE."""
         aerial = self.aerial_image(mask)
-        printed = self.printed_contour(mask)
+        printed = torch.sigmoid(self.resist_beta * (aerial - self.resist_threshold))
         epe = self.edge_placement_error(mask, printed)
 
         return {

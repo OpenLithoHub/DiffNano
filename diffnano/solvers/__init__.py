@@ -41,7 +41,7 @@ class Solver(Protocol):
     def forward(
         self,
         geometry: torch.Tensor,
-        wavelengths: Sequence[float] | torch.Tensor,
+        wavelengths: Sequence[float] | torch.Tensor | None,
         *,
         source: dict | None = None,
     ) -> SimResult:

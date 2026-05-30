@@ -73,6 +73,7 @@ class DFMMetalensDesigner:
         self.pixel_size_nm = pixel_size_nm
         self.n_material = n_material
         self.n_ambient = n_ambient
+        self.max_height_nm = 2 * wavelength_nm
         self.device = torch.device(device)
 
         self.n_pixels = int(diameter_um * 1000 / pixel_size_nm)
@@ -125,7 +126,7 @@ class DFMMetalensDesigner:
     ) -> torch.Tensor:
         """Optical FoM on the *printed* mask (key to C4)."""
         k0 = 2 * math.pi / self.wavelength_nm
-        height = printed_mask * self.wavelength_nm
+        height = printed_mask * self.max_height_nm
         current_phase = k0 * (self.n_material - self.n_ambient) * height
         target_wrapped = self.target_phase % (2 * math.pi)
         current_wrapped = current_phase % (2 * math.pi)
@@ -205,6 +206,8 @@ class DFMMetalensDesigner:
             if robust:
                 from diffnano.design.robustness import robust_gradient_step
 
+                # Safe: _loss_fn is called synchronously within robust_gradient_step,
+                # so beta is the current step's value when the closure executes.
                 def _loss_fn(d):
                     t, _ = self.total_loss(d, lambda_optical, lambda_litho, lambda_fab, beta)
                     return t

@@ -21,6 +21,7 @@ from __future__ import annotations
 import math
 
 import torch
+from diff_surrogate.geometry import eval_closed_cubic_bspline, sdf_from_curve, sigmoid_projection
 
 __all__ = ["CurvilinearMask", "dvas_boundary"]
 
@@ -106,37 +107,13 @@ class CurvilinearMask:
     def device(self) -> torch.device:
         return self._device
 
+    @staticmethod
     def _eval_bspline(
-        self,
         control_points: torch.Tensor,
         t: torch.Tensor,
     ) -> torch.Tensor:
-        """Evaluate closed cubic B-spline (vectorized)."""
-        N = control_points.shape[0]
-
-        t_scaled = t * N
-        segments = (t_scaled.floor().long()) % N
-        fracs = t_scaled - t_scaled.floor()
-
-        # Standard uniform cubic B-spline: segment i blends pts i, i+1, i+2, i+3
-        idx0 = segments % N
-        idx1 = (segments + 1) % N
-        idx2 = (segments + 2) % N
-        idx3 = (segments + 3) % N
-
-        p0 = control_points[idx0]
-        p1 = control_points[idx1]
-        p2 = control_points[idx2]
-        p3 = control_points[idx3]
-
-        f = fracs.unsqueeze(-1)
-        curve = (
-            (1 - f) ** 3 / 6 * p0
-            + (3 * f**3 - 6 * f**2 + 4) / 6 * p1
-            + (-3 * f**3 + 3 * f**2 + 3 * f + 1) / 6 * p2
-            + f**3 / 6 * p3
-        )
-        return curve
+        """Evaluate closed cubic B-spline (delegates to shared operator)."""
+        return eval_closed_cubic_bspline(control_points, t)
 
     def _compute_sdf(
         self,
@@ -144,43 +121,13 @@ class CurvilinearMask:
     ) -> torch.Tensor:
         """Compute differentiable SDF from curve points.
 
-        Uses minimum distance to curve segments with a differentiable
-        winding number for sign determination (avoids NaN from
-        point_in_polygon conditional branches).
+        Delegates to the shared ``sdf_from_curve`` operator which uses
+        soft-min distance and differentiable winding number.
         """
-        grid_x = self.grid_x
-        grid_y = self.grid_y
-
-        # Distance: minimum over all curve points
-        gx = grid_x.unsqueeze(-1)  # (H, W, 1)
-        gy = grid_y.unsqueeze(-1)
-        cx = curve_points[:, 0].reshape(1, 1, -1)
-        cy = curve_points[:, 1].reshape(1, 1, -1)
-
-        dist_sq = (gx - cx) ** 2 + (gy - cy) ** 2
-        dists = torch.sqrt(dist_sq + 1e-12)
-
-        # Soft-min for differentiable aggregation
-        softmin_temp = 10.0
-        weights = torch.softmax(-softmin_temp * dists, dim=-1)
-        min_dist = (weights * dists).sum(dim=-1)
-
-        # Differentiable winding number for inside/outside
-        # Uses atan2-based angle accumulation
-        dx = curve_points[:, 0].unsqueeze(0).unsqueeze(0) - grid_x.unsqueeze(-1)
-        dy = curve_points[:, 1].unsqueeze(0).unsqueeze(0) - grid_y.unsqueeze(-1)
-
-        angles = torch.atan2(dy, dx)  # (H, W, n_pts)
-
-        angle_diff = angles[..., 1:] - angles[..., :-1]
-        angle_diff = torch.atan2(torch.sin(angle_diff), torch.cos(angle_diff))
-
-        winding_sum = angle_diff.sum(dim=-1)
-        winding_number = winding_sum / (2 * math.pi)
-
-        inside = torch.sigmoid(20.0 * (winding_number.abs() - 0.5))
-
-        return min_dist * (1 - 2 * inside)
+        return sdf_from_curve(
+            self.grid_x, self.grid_y, curve_points,
+            softmin_temp=10.0, winding_sharpness=20.0,
+        )
 
     def forward(
         self,
@@ -219,7 +166,7 @@ class CurvilinearMask:
             sdf = sdf - shift
 
         # Soft binarization
-        mask = torch.sigmoid(-b * sdf)
+        mask = sigmoid_projection(sdf, beta=b)
         return mask
 
     def sdf(

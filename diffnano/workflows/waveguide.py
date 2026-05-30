@@ -78,6 +78,7 @@ def _waveguide_mode_1d(
     modes_sorted = eigenvectors[:, idx[:n_modes]].T  # (n_modes, N)
 
     # Normalize modes
+    modes_sorted = modes_sorted.clone()
     for i in range(min(n_modes, modes_sorted.shape[0])):
         norm = modes_sorted[i].norm()
         if norm > 0:
@@ -169,8 +170,9 @@ class WaveguideDesigner:
         eps_r[y_start:y_end, :] = eps_core
 
         if geometry is not None:
-            # Use geometry as density for the entire grid
-            eps_r = eps_clad + (eps_core - eps_clad) * geometry
+            # Overwrite only the design region with geometry density
+            eps_r = eps_r.clone()
+            eps_r[y_start:y_end, :] = eps_clad + (eps_core - eps_clad) * geometry[y_start:y_end, :]
 
         return eps_r
 
@@ -195,8 +197,9 @@ class WaveguideDesigner:
         if eps_r is None:
             eps_r = self.waveguide_eps()
 
-        # Average along propagation direction (dim=1, x-axis) to get 1D cross-section
-        eps_1d = eps_r.mean(dim=1)  # (W,) — cross-section perpendicular to propagation
+        # Note: averaging along propagation direction (dim=1) is only valid
+        # for straight waveguides. For bent geometries, use a cross-sectional slice.
+        eps_1d = eps_r.mean(dim=1)  # (W,)
 
         n_effs, modes_1d = _waveguide_mode_1d(
             eps_1d,
@@ -234,6 +237,8 @@ class WaveguideDesigner:
         field_flat = field.flatten()
         target_flat = target_mode.flatten()
 
+        # .conj() is a no-op for real fields; for complex solver output this correctly
+        # computes the Hermitian inner product.
         numerator = torch.abs(field_flat @ target_flat.conj()) ** 2
         denominator = (field_flat.norm() ** 2) * (target_flat.norm() ** 2 + 1e-12)
 

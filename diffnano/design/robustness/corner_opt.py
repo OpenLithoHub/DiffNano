@@ -90,6 +90,7 @@ def corner_optimization_step(
     nominal_weight: float = 1.0,
     optimizer: torch.optim.Optimizer | None = None,
     pixel_size_nm: float = 5.0,
+    representation: str = "sdf",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """One optimisation step that jointly minimises nominal + corner losses.
 
@@ -122,6 +123,10 @@ def corner_optimization_step(
     pixel_size_nm : float
         Physical size of one pixel in nanometers, forwarded to
         :func:`~diffnano.design.robustness.core.linewidth_perturbation`.
+    representation : str
+        ``"sdf"`` if *params* is a signed distance field (uses SDF shift),
+        ``"density"`` if *params* is a density field in [0, 1] (uses additive
+        perturbation with clamping).
 
     Returns
     -------
@@ -154,17 +159,19 @@ def corner_optimization_step(
     for corner in corners:
         delta = params.new_tensor(corner.delta_nm, dtype=params.dtype)
 
-        # Use the existing linewidth_perturbation from core.py (SDF shift).
-        # For density-parameterized designs, callers can wrap forward_fn to
-        # apply apply_perturbation_to_density instead.
-        perturbed = linewidth_perturbation(params, delta, pixel_size_nm=pixel_size_nm)
+        if representation == "sdf":
+            perturbed = linewidth_perturbation(params, delta, pixel_size_nm=pixel_size_nm)
+        else:
+            # For density, apply a small additive perturbation
+            perturbed = params + delta * pixel_size_nm * 0.01
+            perturbed = perturbed.clamp(0.0, 1.0)
 
         loss_corner = forward_fn(perturbed)
         total_loss = total_loss + corner.weight * loss_corner
 
     # --- Back-propagate & step ----------------------------------------------
-    total_loss.backward()
     if optimizer is not None:
+        total_loss.backward()
         optimizer.step()
 
     return total_loss, params

@@ -161,11 +161,12 @@ def _morphological_opening(density: torch.Tensor, radius: int) -> torch.Tensor:
     kernel_size = 2 * radius + 1
 
     # Pad the input so output size matches input
+    # Identity element for erosion (local min) of [0,1] density is 1.0
     padded = torch.nn.functional.pad(
         density.unsqueeze(0).unsqueeze(0),
         [radius] * 4,
         mode="constant",
-        value=0.0,
+        value=1.0,
     )
 
     # Approximate erosion via local min (negative max_pool)
@@ -258,6 +259,9 @@ class AdaptiveRobustOptimizer:
             Design parameters θ.
         forward_fn : callable
             ``forward_fn(params, perturbation_delta) -> loss``.
+
+            Note: forward_fn signature differs from robust_gradient_step. Here it takes
+            (params, perturbation_delta) rather than (perturbed_params).
         perturbation_fn : callable
             ``perturbation_fn(params, delta) -> perturbed_params``.
         curriculum_frac : float

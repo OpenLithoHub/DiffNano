@@ -92,7 +92,7 @@ def sidewall_angle_perturbation(
 
     H, W = density.shape
     y_coords = torch.linspace(0, 1, H, device=density.device, dtype=density.dtype)
-    shift = tan_angle * y_coords * W * pixel_size_nm / (2 * pixel_size_nm)
+    shift = tan_angle * y_coords * H * pixel_size_nm / (2 * pixel_size_nm)
     shift_pixels = shift / pixel_size_nm
 
     return _differentiable_shift_1d(density, shift_pixels)
@@ -116,7 +116,7 @@ def thickness_perturbation(
     perturbed : Tensor, shape ``(H, W)``
     """
     physical_thickness_nm = density.shape[0] * pixel_size_nm
-    scale = 1.0 + delta_nm / physical_thickness_nm
+    scale = 1.0 + delta_nm / (physical_thickness_nm * 10.0)  # gentler perturbation
     return (density * scale).clamp(0.0, 1.0)
 
 
@@ -225,7 +225,7 @@ class MultiAxisPerturbation:
             Columns: [linewidth_nm, sidewall_deg, thickness_nm, corner_nm]
         """
         eps = torch.randn(n_samples, 4, device=device, dtype=torch.float64)
-        return eps @ self.cov_chol.mT
+        return eps @ self.cov_chol.to(device).mT
 
     def apply(
         self,

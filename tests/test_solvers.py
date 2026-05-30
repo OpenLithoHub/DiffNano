@@ -65,6 +65,11 @@ class TestRCWASolver:
         loss.backward()
         assert eps.grad is not None
         assert eps.grad.shape == eps.shape
+        # RCWA gradients through eigh can produce NaN for uniform permittivity;
+        # verify that non-NaN entries exist and are non-trivial where valid
+        valid_grad = eps.grad[~torch.isnan(eps.grad)]
+        if valid_grad.numel() > 0:
+            assert valid_grad.abs().max() > 1e-10, "Gradient is effectively zero"
 
     def test_diffraction_efficiency(self, solver):
         eps = torch.ones(5, 80, dtype=torch.float64) * 2.0
@@ -131,6 +136,7 @@ class TestFDFDSolver2D:
         loss = result.field.abs().sum()
         loss.backward()
         assert eps.grad is not None
+        assert eps.grad.abs().max() > 1e-10, "Gradient is effectively zero"
         assert eps.grad.shape == (12, 12)
 
     def test_solve_method(self, solver):
@@ -204,6 +210,7 @@ class TestSparseFDFDSolver2D:
         loss = result.field.abs().sum()
         loss.backward()
         assert eps.grad is not None
+        assert eps.grad.abs().max() > 1e-10, "Gradient is effectively zero"
         assert eps.grad.shape == (12, 12)
 
     def test_solve_method(self, solver):
@@ -303,6 +310,7 @@ class TestFDTDSolver2D:
         loss = result.field.sum()
         loss.backward()
         assert eps.grad is not None
+        assert eps.grad.abs().max() > 1e-10, "Gradient is effectively zero"
         assert eps.grad.shape == (20, 20)
 
     def test_point_source(self, solver):
@@ -392,6 +400,7 @@ class TestFDTDSolver3D:
         loss = result.field.sum()
         loss.backward()
         assert eps.grad is not None
+        assert eps.grad.abs().max() > 1e-10, "Gradient is effectively zero"
         assert eps.grad.shape == (10, 10, 10)
 
     def test_point_source(self, solver):

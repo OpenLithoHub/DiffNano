@@ -114,8 +114,8 @@ class LearnedRepresentation:
         mu: torch.Tensor,
         logvar: torch.Tensor,
     ) -> torch.Tensor:
-        recon_loss = nn.functional.mse_loss(recon, x, reduction="sum")
-        kl_loss = -0.5 * (1 + logvar - mu**2 - logvar.exp()).sum()
+        recon_loss = nn.functional.mse_loss(recon, x, reduction="mean")
+        kl_loss = -0.5 * (1 + logvar - mu**2 - logvar.exp()).mean()
         return recon_loss + kl_loss
 
     def train_vae(

@@ -71,7 +71,7 @@ class MultiObjectiveExplorer:
         weights: dict[str, float],
     ) -> torch.Tensor:
         """Compute weighted scalarized loss."""
-        total = torch.tensor(0.0, dtype=torch.float64, device=self._device)
+        total = 0.0 * density.sum()  # connected to density, gradient-safe
         for name, fn in self.objectives.items():
             w = weights.get(name, 0.0)
             if w > 0:

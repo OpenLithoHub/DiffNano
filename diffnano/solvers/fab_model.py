@@ -21,16 +21,16 @@ __all__ = ["LearnedFabModel"]
 
 
 class _UNetBlock(nn.Module):
-    """Single U-Net block: conv + batchnorm + ReLU."""
+    """Single U-Net block: conv + groupnorm + ReLU."""
 
     def __init__(self, in_ch: int, out_ch: int):
         super().__init__()
         self.conv = nn.Conv2d(in_ch, out_ch, 3, padding=1)
-        self.bn = nn.BatchNorm2d(out_ch, affine=False)
+        self.gn = nn.GroupNorm(1, out_ch)
         self.relu = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.relu(self.bn(self.conv(x)))
+        return self.relu(self.gn(self.conv(x)))
 
 
 class _PhysicsGatedNet(nn.Module):

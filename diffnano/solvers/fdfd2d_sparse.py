@@ -133,7 +133,7 @@ def build_sparse_helmholtz_te(
     inv_dl2 = 1.0 / (dl * dl)
     k0_sq = omega * omega
 
-    inv_eps = 1.0 / (eps_r.ravel().astype(np.float64) + 1e-12)
+    inv_eps = 1.0 / np.maximum(eps_r.ravel().astype(np.float64), 0.1)
     rows_r = np.arange(N) // W
     cols_c = np.arange(N) % W
 

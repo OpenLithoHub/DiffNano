@@ -6,6 +6,7 @@ __all__ = [
     "__version__",
     "RCWASolver",
     "FDFDSolver2D",
+    "SparseFDFDSolver2D",
     "FDTDSolver2D",
     "FDTDSolver3D",
     "NeuralSurrogate",
@@ -19,6 +20,8 @@ __all__ = [
     "BroadbandOptimizer",
     "MultiObjectiveExplorer",
     "EndToEndPipeline",
+    "gmres_matfree",
+    "fdfd_fixed_point_gradient",
 ]
 
 
@@ -26,12 +29,15 @@ def __getattr__(name):
     if name in (
         "RCWASolver",
         "FDFDSolver2D",
+        "SparseFDFDSolver2D",
         "FDTDSolver2D",
         "FDTDSolver3D",
         "NeuralSurrogate",
         "HopkinsLithoModel",
         "LearnedFabModel",
         "DifferentiableResistModel",
+        "gmres_matfree",
+        "fdfd_fixed_point_gradient",
     ):
         from diffnano import solvers
 

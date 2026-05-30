@@ -151,7 +151,8 @@ def _build_helmholtz_te(
         sigma_y = _pml_profile_1d(H, n_pml, sigma_max, device)
         sigma_2d = sigma_y.unsqueeze(1).expand(H, W) + sigma_x.unsqueeze(0).expand(H, W)
         s = sigma_2d.reshape(N)
-        absorber = -1j * omega * s.to(dtype)
+        s_complex = s.to(dtype)
+        absorber = -1j * omega * s_complex + s_complex**2 / (abs(omega) + 1e-12)
     else:
         absorber = 0.0
 
@@ -225,7 +226,7 @@ class FDFDSolver2D:
         self.polarization = polarization.upper()
         self.pml_layers = pml_layers
         self.eps_background = eps_background
-        self.device = torch.device(device)
+        self._device = torch.device(device)
 
         self.omega = 2 * math.pi * 3e17 / (wavelength_nm * 1e-9)  # rad/s
         # Simplified normalized omega for FDFD
@@ -341,7 +342,3 @@ class FDFDSolver2D:
     @property
     def device(self) -> torch.device:
         return self._device
-
-    @device.setter
-    def device(self, value):
-        self._device = torch.device(value)

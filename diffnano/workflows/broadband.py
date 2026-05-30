@@ -84,15 +84,18 @@ class BroadbandOptimizer:
         # Convert 2D density to layered geometry
         H, W = density.shape
         layer_thickness = H // self.n_layers
+        remainder = H % self.n_layers
         if layer_thickness == 0:
             layer_thickness = 1
 
         layers = []
+        y0 = 0
         for i in range(self.n_layers):
-            y0 = min(i * layer_thickness, H)
-            y1 = min((i + 1) * layer_thickness, H)
+            extra = 1 if i < remainder else 0
+            y1 = min(y0 + layer_thickness + extra, H)
             avg_density = density[y0:y1, :].mean(dim=0)
             layers.append(self.eps_low + (self.eps_high - self.eps_low) * avg_density)
+            y0 = y1
 
         geometry = torch.stack(layers)
 
@@ -106,7 +109,7 @@ class BroadbandOptimizer:
             )
         else:
             idx = target_order + self.solver.fourier_orders
-            idx = idx.clamp(0, result.field.shape[-1] - 1)
+            idx = max(0, min(idx, result.field.shape[-1] - 1))
             efficiencies = result.field[:, idx]
 
         # Weighted negative efficiency (minimize = maximize efficiency)

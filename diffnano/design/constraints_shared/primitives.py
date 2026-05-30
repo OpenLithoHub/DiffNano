@@ -59,7 +59,7 @@ def minimum_cd_penalty(
     eroded = -F.max_pool2d(-density, k_size, stride=1, padding=r)
 
     # Opening (erosion then dilation) detects small features
-    opened = -F.max_pool2d(-eroded, k_size, stride=1, padding=r)
+    opened = F.max_pool2d(eroded, k_size, stride=1, padding=r)
 
     # Penalty: difference between original and opened
     orig_2d = density.reshape(-1, *density.shape[-2:])
@@ -190,7 +190,8 @@ def corner_rounding_penalty(
 
     # Weight by gradient magnitude (boundary regions)
     weighted = (dir_change**2) * mag
-    return weighted.mean()
+    # Scale penalty inversely with radius: tighter radius = stronger penalty
+    return weighted.mean() / (radius_pixels + 1e-6)
 
 
 def combined_fabrication_penalty(

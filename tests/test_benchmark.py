@@ -22,6 +22,16 @@ class TestMetrics:
         s = strehl_ratio_from_phase(phase_err)
         assert s.item() == pytest.approx(1.0, abs=0.01)
 
+    def test_strehl_ratio_from_field(self):
+        """strehl_ratio_from_field returns 1.0 for identical real fields."""
+        from diffnano.benchmark.metrics import strehl_ratio_from_field
+
+        H, W = 32, 32
+        field = torch.ones(1, H, W, dtype=torch.float64)
+        target = torch.ones(1, H, W, dtype=torch.float64)
+        sr = strehl_ratio_from_field(field, target)
+        assert sr.item() > 0.99
+
     def test_strehl_large_error(self):
         phase_err = torch.ones(10, dtype=torch.float64) * 3.0
         s = strehl_ratio_from_phase(phase_err)

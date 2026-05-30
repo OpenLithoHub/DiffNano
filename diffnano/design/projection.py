@@ -58,9 +58,11 @@ def smooth_filter(
     if density.dim() == 2:
         density = density.unsqueeze(0).unsqueeze(0)
     elif density.dim() == 3:
-        density = density.unsqueeze(0)
+        density = density.unsqueeze(1)  # becomes (N, 1, H, W)
 
     k_size = int(2 * radius + 1)
+    if k_size % 2 == 0:
+        k_size += 1
     sigma = radius / 2.0
 
     x = torch.arange(k_size, dtype=density.dtype, device=density.device) - k_size // 2
@@ -69,7 +71,7 @@ def smooth_filter(
     kernel_2d = kernel_1d.unsqueeze(1) @ kernel_1d.unsqueeze(0)
     kernel = kernel_2d.unsqueeze(0).unsqueeze(0)
 
-    pad = k_size // 2
+    pad = (k_size - 1) // 2
     smoothed = F.conv2d(density, kernel, padding=pad)
 
     # Remove only the dimensions we added (0 and 1 for 2D input, 0 for 3D)

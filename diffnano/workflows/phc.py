@@ -136,7 +136,7 @@ def _band_structure_pwe(
     A = H * W  # unit cell area in pixel units
 
     if polarization == "TM":
-        field = 1.0 / (eps_r + 1e-12)
+        field = 1.0 / eps_r.clamp(min=0.1)
     else:
         field = eps_r
 
@@ -194,7 +194,7 @@ def _band_structure_pwe(
         # Make M Hermitian for stable real eigenvalues
         M_herm = (M + M.conj().mT) / 2.0
 
-        eigenvalues = torch.linalg.eigvalsh(M_herm.real)
+        eigenvalues = torch.linalg.eigvalsh(M_herm)
         bands_k = eigenvalues[:n_bands]
         freq = torch.sqrt(torch.clamp(bands_k, min=0.0))
         all_bands.append(freq)

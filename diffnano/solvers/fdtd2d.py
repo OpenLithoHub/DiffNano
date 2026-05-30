@@ -248,7 +248,7 @@ class FDTDSolver2D:
         # Update H fields with CPML damping
         dEz_dy = torch.zeros_like(Ez)
         dEz_dy[:, :-1] = (Ez[:, 1:] - Ez[:, :-1]) / dy
-        Hx = b_y.unsqueeze(0) * Hx - (dt / mu_r) * (c_y.unsqueeze(0) * dEz_dy + dEz_dy)
+        Hx = b_y.unsqueeze(1) * Hx - (dt / mu_r) * (c_y.unsqueeze(1) * dEz_dy + dEz_dy)
 
         dEz_dx = torch.zeros_like(Ez)
         dEz_dx[:-1, :] = (Ez[1:, :] - Ez[:-1, :]) / dx
@@ -288,7 +288,7 @@ class FDTDSolver2D:
 
         dHz_dy = torch.zeros_like(Hz)
         dHz_dy[1:, :] = (Hz[1:, :] - Hz[:-1, :]) / dy
-        Ey = b_y.unsqueeze(0) * Ey - (dt / eps_r) * (c_y.unsqueeze(0) * dHz_dy + dHz_dy)
+        Ey = b_y.unsqueeze(1) * Ey - (dt / eps_r) * (c_y.unsqueeze(1) * dHz_dy + dHz_dy)
 
         # Update H field with CPML
         dEy_dx = torch.zeros_like(Ey)

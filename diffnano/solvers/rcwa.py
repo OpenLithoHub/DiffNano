@@ -42,6 +42,8 @@ def _build_toeplitz_1d(
     eps_conv : Tensor, shape ``(n_fourier, n_fourier)``
     """
     N = eps_profile.shape[0]
+    if n_fourier > N:
+        raise ValueError(f"n_fourier ({n_fourier}) must not exceed grid size ({N})")
 
     eps_fft = torch.fft.fft(eps_profile.to(torch.complex128)) / N
 
@@ -52,7 +54,7 @@ def _build_toeplitz_1d(
     row_idx = torch.arange(n_fourier, device=eps_profile.device)
     col_idx = torch.arange(n_fourier, device=eps_profile.device)
     diff = col_idx.unsqueeze(0) - row_idx.unsqueeze(1) + half
-    diff = diff.clamp(0, n_fourier - 1)
+    diff = diff % n_fourier
     eps_conv = coeffs[diff]
 
     return eps_conv
@@ -76,6 +78,8 @@ def _build_toeplitz_batched(
     n_layers = eps_layers.shape[0]
     N = eps_layers.shape[1]
     device = eps_layers.device
+    if n_fourier > N:
+        raise ValueError(f"n_fourier ({n_fourier}) must not exceed grid size ({N})")
 
     eps_fft = torch.fft.fft(eps_layers.to(torch.complex128), dim=-1) / N
 
@@ -86,7 +90,7 @@ def _build_toeplitz_batched(
     row_idx = torch.arange(n_fourier, device=device)
     col_idx = torch.arange(n_fourier, device=device)
     diff = col_idx.unsqueeze(0) - row_idx.unsqueeze(1) + half
-    diff = diff.clamp(0, n_fourier - 1)
+    diff = diff % n_fourier
 
     eps_conv = coeffs[:, diff]  # (n_layers, n_fourier, n_fourier)
 
@@ -311,7 +315,12 @@ class RCWASolver:
         polarization: str,
         thickness_nm: float | None = None,
     ) -> SimResult:
-        """Forward pass for 2D geometry (n_layers, H, W)."""
+        """Forward pass for 2D geometry (n_layers, H, W).
+
+        Note: spatial variation along the last dimension (W) is averaged out,
+        converting the 2D density to 1D layer profiles. This is a simplification
+        for 1D RCWA; for full 2D structures, process each row independently.
+        """
         eps_low = self.eps_ambient
         eps_high = self.eps_substrate if self.eps_substrate > 1.0 else 12.0
         eps_layers = eps_low + (eps_high - eps_low) * density.mean(dim=-1)
@@ -337,6 +346,11 @@ class RCWASolver:
         *,
         source: dict | None = None,
     ) -> torch.Tensor:
-        """Total transmission (sum over all orders)."""
+        """Total diffraction efficiency (sum of all transmitted orders).
+
+        Because efficiencies are normalized to sum to 1.0, this always
+        returns approximately 1.0 for lossless structures. For actual
+        power transmission, use the un-normalized field.
+        """
         result = self.forward(geometry, wavelengths, source=source)
         return result.field.sum(dim=-1)

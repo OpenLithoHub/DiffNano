@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 import torch
 
@@ -120,7 +121,8 @@ def run_c4_benchmark(
         "n_steps": n_steps,
     }
 
-    with open("benchmark_c4_results.json", "w") as f:
+    REPO = Path(__file__).resolve().parents[1]
+    with open(REPO / "benchmark_c4_results.json", "w") as f:
         json.dump(results, f, indent=2)
     print("\nResults saved to benchmark_c4_results.json")
 

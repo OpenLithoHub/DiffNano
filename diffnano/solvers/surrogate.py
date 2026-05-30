@@ -12,8 +12,26 @@ from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
-from diff_surrogate import CorrectionPolicy
-from diff_surrogate.base import SurrogateStats
+try:
+    from diff_surrogate import CorrectionPolicy
+    from diff_surrogate.base import SurrogateStats
+except ImportError:
+
+    class CorrectionPolicy:
+        """Stub when diff_surrogate is not installed."""
+
+        def __init__(self, correction_interval=10):
+            self.correction_interval = correction_interval
+
+        def should_correct(self, count):
+            return count % self.correction_interval == 0
+
+    class SurrogateStats:
+        """Stub when diff_surrogate is not installed."""
+
+        def __init__(self):
+            self.total_predictions = 0
+            self.total_corrections = 0
 
 from diffnano.solvers._result import SimResult
 
@@ -29,7 +47,8 @@ class _SurrogateNet(nn.Module):
     Parameters
     ----------
     input_size : int
-        Spatial input size (assumes square input).
+        Expected spatial size of input geometry. Not enforced -- the CNN uses
+        AdaptiveAvgPool2d so any spatial size is accepted.
     output_size : int
         Number of output channels (n_fourier).
     hidden_channels : int
@@ -60,8 +79,13 @@ class _SurrogateNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if x.dim() == 2:
+            # Single 2D geometry (H, W) -> (1, 1, H, W)
             x = x.unsqueeze(0).unsqueeze(0)
         elif x.dim() == 3:
+            # Batch of 2D (batch, H, W) -> (batch, 1, H, W), or
+            # single 1D geometry (n_layers, n_pixels) -> (n_layers, 1, n_pixels).
+            # NOTE: For 1D geometry, each layer is treated as a separate sample;
+            # AdaptiveAvgPool2d handles the spatial dimension mismatch.
             x = x.unsqueeze(1)
         features = self.encoder(x)
         features = features.reshape(features.shape[0], -1)
@@ -82,7 +106,8 @@ class NeuralSurrogate:
         The underlying RCWA solver used for training data generation
         and periodic correction.
     input_size : int
-        Expected spatial size of input geometry.
+        Expected spatial size of input geometry. Not enforced -- the CNN uses
+        AdaptiveAvgPool2d so any spatial size is accepted.
     hidden_channels : int
         Width of hidden conv layers.
     correction_interval : int
@@ -194,7 +219,7 @@ class NeuralSurrogate:
             loss_history.append((epoch_loss / max(1, n_batches)).item())
 
             if verbose and epoch % 10 == 0:
-                print(f"Epoch {epoch}: loss={loss.item():.6f}")
+                print(f"Epoch {epoch}: loss={loss_history[-1]:.6f}")
 
         self._trained = True
         self.net.eval()
@@ -235,7 +260,7 @@ class NeuralSurrogate:
         pred = self.net(geo)
 
         return SimResult(
-            field=pred,
+            field=pred.unsqueeze(0),  # (1, n_fourier) to match RCWA convention
             wavelengths=wavelengths,
             metadata={
                 "surrogate": True,
@@ -269,7 +294,7 @@ class NeuralSurrogate:
                 exact = self.base_solver.forward(geo).field
                 approx = self.net(geo)
 
-            rel_err = (exact - approx).abs() / (exact.abs() + 1e-8)
+            rel_err = (exact - approx).abs() / (exact.abs().clamp(min=1e-4))
             errors.append(rel_err.max().item())
 
         return {
