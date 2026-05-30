@@ -18,7 +18,7 @@ Gradient-based inverse design of nanophotonic devices with differentiable electr
 - Metalens benchmarks use toy-scale grids (20x20 to 64x64), not industrial-scale metasurfaces.
 
 **Known stubs / unimplemented:**
-- `diffnano.workflows.splitter.SplitterDesigner` — beam splitter workflow returns `geometry.mean()` as a dummy efficiency proxy. Not a real EM simulation.
+- No stubs in DiffNano. All core solvers (RCWA, FDTD, FDFD, implicit diff) and workflows (metalens, DFM, robust optimization) are functional.
 
 </div>
 
@@ -58,12 +58,19 @@ DiffNano was built to learn how these solvers work by reimplementing them from s
 | Solver | Type | Best For |
 |:-------|:-----|:---------|
 | **Differentiable FDTD** | 2D/3D time-domain with CPML | Broadband, transient, arbitrary geometries |
-| **Differentiable RCWA** | Fourier-domain, periodic structures (matrix_sqrt + eig_expm + eig backends) | Metasurfaces, gratings, metalenses |
+| **Differentiable RCWA** | Fourier-domain, periodic structures (matrix_sqrt + eig_expm + eig + R-DIT backends) | Metasurfaces, gratings, metalenses |
 | **Differentiable FDFD** | Frequency-domain, steady-state | CW problems, GPU-native dense solve |
 | **Neural Surrogate** | CNN-accelerated RCWA | 10-50x optimization speedup |
+| **Cross-Attention RCWA Proxy** | Cross-attention neural RCWA surrogate | Learned fast RCWA approximation |
 | **Implicit Differentiation** | Matrix-free GMRES + adjoint | Memory-efficient FDFD gradients |
 
 All solvers are **PyTorch-native** — run on CPU/GPU/MPS, integrate with Adam, L-BFGS, and any PyTorch optimizer.
+
+**RCWA backends:**
+- `eig` — classical eigenmode decomposition (reference)
+- `eig_expm` — eigenmode + matrix exponential (N1)
+- `matrix_sqrt` — Denman-Beavers iteration, truly eig-free with gain layer protection (N7.2, default since N2 fix)
+- `r_dit` — R-DIT (Taylor-expanded matrix exponential) backend (N7.1), eigendecomposition-free via Blanes 2024
 
 ---
 
@@ -223,7 +230,7 @@ The unified autograd graph propagates lithography printability gradients back in
 | C4 Unified vs decoupled optimization | `diffnano/workflows/dfm_metalens.py` | `tests/test_benchmark.py` | `benchmark_c4_results.json` | Verified |
 | C7 Adaptive optimization strategy | `diffnano/design/robustness/adaptive.py` | `tests/test_benchmark.py` | `benchmark_c7_results.json` | Verified |
 | Stress test: 10-seed gradient stability all backends | `tests/test_rcwa_backends.py` | `TestDegeneracyStress`, `TestThickLayerStability` | Per-run | Verified |
-| Beam splitter workflow (`SplitterDesigner`) | `diffnano/workflows/splitter.py` | No meaningful test | N/A | **Aspirational** — returns dummy efficiency proxy |
+| Beam splitter workflow (`SplitterDesigner`) | `diffnano/workflows/splitter.py` | `tests/test_splitter.py` | Internal | Verified — real EM (RCWA) forward model replaces previous dummy proxy |
 
 ### Compatibility
 
@@ -341,7 +348,7 @@ All benchmark data above was generated on the following environment:
 - OS: Ubuntu 22.04.5 LTS
 - Python: 3.10.12
 - PyTorch: 2.12.0+cpu
-- DiffNano: `0.6.0` (current main)
+- DiffNano: `0.7.0` (current main)
 
 **Run the benchmarks:**
 
@@ -407,7 +414,7 @@ diffnano/
 │   ├── waveguide.py          # Waveguide bends / converters
 │   ├── broadband.py          # Multi-wavelength optimization
 │   ├── multi_objective.py    # Pareto front exploration
-│   ├── splitter.py           # Beam splitter (stub)
+│   ├── splitter.py           # Beam splitter (RCWA-based EM simulation)
 │   └── end_to_end.py         # Spec-to-GDSII pipeline
 ├── utils/
 │   └── convergence.py        # Hybrid Z-score convergence monitor
@@ -428,6 +435,7 @@ diffnano/
 | v0.4 | Neural surrogate + broadband | Done |
 | v0.5 | Learned fabrication model + curvilinear masks | Done |
 | v0.6 | Multi-objective Pareto + end-to-end + VAE | Done |
+| v0.7 | R-DIT backend (N7.1), Denman-Beavers matrix sqrt + gain layer protection (N7.2), cross-attention RCWA proxy (N7.3), real EM splitter workflow (N7.4) | Done |
 | v1.0 | Full benchmark suite + validation + arXiv paper | Planned |
 
 ---
