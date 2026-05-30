@@ -1,6 +1,6 @@
-"""C4 benchmark: unified autograd graph vs decoupled baseline.
+"""Unified autograd graph vs decoupled baseline benchmark.
 
-Produces the CN filing C4 embodiment data:
+Produces benchmark data:
 - Optimization loss curves (unified vs decoupled)
 - Final Strehl ratio comparison
 - Lithography EPE (edge placement error) comparison

@@ -1,4 +1,4 @@
-"""DFM-aware metalens workflow (C4 embodiment).
+"""DFM-aware metalens workflow.
 
 Single density parameterization driving both:
 (a) Hopkins forward lithography model (aerial image → printed mask)
@@ -6,8 +6,6 @@ Single density parameterization driving both:
 
 Both pipelines call constraints_shared primitives; gradients from both
 flow back to the same parameter tensor via a unified autograd graph.
-
-Tier 3 module (release after CN priority confirmation).
 """
 
 from __future__ import annotations

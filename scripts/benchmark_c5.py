@@ -1,6 +1,6 @@
-"""C5 validation: nominal vs robust Monte Carlo benchmark.
+"""Nominal vs robust Monte Carlo benchmark.
 
-Produces the CN filing C5 embodiment data:
+Produces benchmark data:
 - N=100+ Monte Carlo realizations under linewidth perturbation N(0, σ²), σ=5nm
 - Nominal-optimized vs robust-optimized Strehl ratio histograms
 - Yield-equivalent figure: fraction of realizations with Strehl ≥ threshold

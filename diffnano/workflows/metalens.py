@@ -8,9 +8,7 @@ Provides:
 - Optional designable-mask support for freezing fixed regions
 - Hybrid Z-score convergence monitoring
 
-Two configurations: nominal (no C5) and robust (C5 enabled).
-
-Tier 2 module.
+Two configurations: nominal and robust (with process-variation-robust optimization).
 """
 
 from __future__ import annotations

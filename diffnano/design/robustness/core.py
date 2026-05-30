@@ -9,8 +9,6 @@ This module provides:
 The simplified v0.1 scope supports linewidth ±5 nm via differentiable
 distance-field shift of the level set, with K=4–8 Monte Carlo samples
 per gradient step.
-
-Tier 3 module (release after CN priority confirmation).
 """
 
 from __future__ import annotations

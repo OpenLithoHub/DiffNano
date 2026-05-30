@@ -5,8 +5,8 @@ Supports three parameterization modes:
 - DensityField: density → permittivity (Heaviside projection)
 - BSplineCurve: B-spline control points → binary mask (distance-field rasterization)
 
-The B-spline + differentiable-distance-field machinery is referenced by
-C4.2 and C5.2 dependent claims.  Tier 3 module.
+The B-spline + differentiable-distance-field machinery supports cross-domain
+parameterization shared between lithography and EM pipelines.
 """
 
 from __future__ import annotations

@@ -215,7 +215,7 @@ The unified autograd graph propagates lithography printability gradients back in
 
 | Feature | DiffNano | Tidy3D v2.10.1 | MEEP v1.32.0 | TorchRDIT | FDTDX (2026) | Ceviche (archived) |
 |:--------|:---------|:---------------|:-------------|:----------|:-------------|:-------------------|
-| **RCWA** | Yes | No | No | No (R-DIT) | No | No |
+| **RCWA** | Yes (lossy + lossless) | No | No | No (R-DIT) | No | No |
 | **FDTD** | 2D + 3D | 3D | 3D | No | 3D | 2D |
 | **FDFD** | Yes | No | No | No | No | Yes |
 | **Neural Surrogate** | Yes (CNN) | No | No | No | No | No |
@@ -223,6 +223,7 @@ The unified autograd graph propagates lithography printability gradients back in
 | **Autograd** | PyTorch native | Adjoint (JAX) | Adjoint wrapper | PyTorch native | JAX native | HIPS autograd |
 | **Fabrication-aware** | Yes (Hopkins litho) | No | No | No | No | No |
 | **Robust optimization** | Yes (differentiable MC) | No | No | No | No | No |
+| **Lossy materials (RCWA)** | Yes (complex permittivity via eig) | — | — | — | — | — |
 | **License** | Apache 2.0 | LGPL (solver proprietary) | GPL | MIT | Open source | MIT |
 | **Status** | v0.6, experimental | Production | Production | Research | Research | Unmaintained |
 

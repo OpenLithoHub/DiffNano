@@ -6,10 +6,8 @@ These constraint functions are importable by both:
 
 Each primitive is a pure differentiable function of a shared parameterization
 tensor (density field, SDF, or control-point representation).  Both pipelines
-call them through the same import path — this is the C4 unified-autograd-graph
+call them through the same import path — this is the unified-autograd-graph
 mechanism.
-
-Tier 3 module (release after CN priority confirmation).
 """
 
 from __future__ import annotations
