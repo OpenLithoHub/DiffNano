@@ -290,14 +290,18 @@ All benchmark data above was generated on the following environment:
 **Run the benchmarks:**
 
 ```bash
-# C4: Unified vs Decoupled
-python3 scripts/benchmark_c4.py
+# Flagship metalens DFM: multi-seed (10 seeds) with Wilcoxon tests
+make flagship-a          # 10 seeds, full report
+make flagship-a-ci       # 3 seeds, CI smoke test
 
-# C5: Monte Carlo Robustness
-python3 scripts/benchmark_c5.py
+# Or directly:
+python3 scripts/flagship_metalens_dfm.py                  # default 10 seeds
+python3 scripts/flagship_metalens_dfm.py --seed-sweep 3   # CI smoke test
 
-# C7: Optimization Strategy
-python3 scripts/benchmark_c7.py
+# Individual benchmarks:
+python3 scripts/benchmark_c4.py     # C4: Unified vs Decoupled
+python3 scripts/benchmark_c5.py     # C5: Monte Carlo Robustness
+python3 scripts/benchmark_c7.py     # C7: Optimization Strategy
 
 # Generate charts for README
 python3 scripts/generate_benchmark_charts.py
