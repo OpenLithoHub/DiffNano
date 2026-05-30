@@ -42,6 +42,7 @@ DiffNano was built to learn how these solvers work by reimplementing them from s
 | **Differentiable RCWA** | Fourier-domain, periodic structures | Metasurfaces, gratings, metalenses |
 | **Differentiable FDFD** | Frequency-domain, steady-state | CW problems, GPU-native dense solve |
 | **Neural Surrogate** | CNN-accelerated RCWA | 10-50x optimization speedup |
+| **Implicit Differentiation** | Matrix-free GMRES + adjoint | Memory-efficient FDFD gradients |
 
 All solvers are **PyTorch-native** — run on CPU/GPU/MPS, integrate with Adam, L-BFGS, and any PyTorch optimizer.
 
@@ -51,7 +52,7 @@ All solvers are **PyTorch-native** — run on CPU/GPU/MPS, integrate with Adam, 
 
 - **Multiple parameterizations** — density maps, height profiles, B-spline curvilinear masks
 - **Fabrication-aware** — lithography modeling (Hopkins), DFM constraints in the autograd graph
-- **Robust optimization** — process-variation-aware via differentiable Monte Carlo
+- **Robust optimization** — process-variation-aware via differentiable Monte Carlo, adaptive curriculum (re-exported from diff-surrogate), and deterministic corner-sweep
 - **Multi-objective Pareto** — automated Pareto front discovery
 - **Learned representation** — VAE latent space optimization
 - **End-to-end** — optical specification to GDSII export
@@ -73,6 +74,20 @@ designer = MetalensDesigner(
 )
 height_map, loss_history = designer.optimize(n_steps=500)
 designer.export_gds("metalens.gds", height_map)
+```
+
+### DFM-Aware Metalens (Co-Design)
+
+```python
+from diffnano import DFMMetalensDesigner
+
+designer = DFMMetalensDesigner(
+    wavelength_nm=940.0,
+    numerical_aperture=0.3,
+    diameter_um=10.0,
+    pixel_size_nm=100.0,
+)
+density, history, breakdown = designer.optimize(n_steps=200)
 ```
 
 ### Photonic Crystal Bandgap
@@ -116,19 +131,28 @@ pip install -e ".[dev]"
 
 ## Co-Design: Metalens + Lithography
 
-DiffNano couples EM and lithography solvers through a shared design parameterization using the diff-surrogate co-design API:
+DiffNano couples EM and lithography solvers through a shared design parameterization. A single density tensor drives both the Hopkins forward lithography model and the RCWA EM solver, with gradients from both flowing back through differentiable fabrication penalties in one autograd graph.
 
 ```python
-from diff_surrogate import CoDesignWorkflow, CoupledLoss
 from diffnano.workflows import DFMMetalensDesigner
 
-# Or use the pre-built DFM workflow directly:
-designer = DFMMetalensDesigner(wavelength_nm=940, pixel_size_nm=5)
+designer = DFMMetalensDesigner(
+    wavelength_nm=940.0,
+    numerical_aperture=0.3,
+    diameter_um=10.0,
+    pixel_size_nm=100.0,
+)
 density, history, breakdown = designer.optimize(n_steps=500)
 # breakdown tracks optical + litho + fabrication losses in one autograd graph
 
 # Compare against decoupled baseline:
 density_base, base_history = designer.decoupled_baseline(n_steps=500)
+```
+
+Run the flagship demo:
+
+```bash
+python scripts/flagship_metalens_dfm.py
 ```
 
 The unified autograd graph propagates lithography printability gradients back into the EM design, achieving lower optical loss and better EPE than sequential decoupled optimization (see C4 benchmark).
@@ -261,31 +285,43 @@ python3 scripts/generate_benchmark_charts.py
 ```
 diffnano/
 ├── solvers/
-│   ├── fdtd2d.py            # 2D FDTD (CPML, checkpointing)
-│   ├── fdtd3d.py            # 3D FDTD
-│   ├── rcwa.py              # RCWA for periodic structures
-│   ├── fdfd2d.py            # Frequency-domain (GPU-native)
-│   ├── litho.py             # Hopkins lithography model
-│   ├── surrogate.py         # CNN-accelerated RCWA
-│   ├── fab_model.py         # Learned fabrication model (U-Net)
-│   └── resist.py            # Differentiable resist model
+│   ├── _result.py            # SimResult container
+│   ├── fdtd2d.py             # 2D FDTD (CPML, checkpointing)
+│   ├── fdtd3d.py             # 3D FDTD
+│   ├── rcwa.py               # RCWA for periodic structures
+│   ├── fdfd2d.py             # Frequency-domain dense (GPU-native)
+│   ├── fdfd2d_sparse.py      # Frequency-domain sparse
+│   ├── implicit_diff.py      # GMRES matfree + FDFD implicit differentiation
+│   ├── litho.py              # Hopkins lithography model
+│   ├── surrogate.py          # CNN-accelerated RCWA
+│   ├── fab_model.py          # Learned fabrication model (U-Net)
+│   └── resist.py             # Differentiable resist model
 ├── design/
-│   ├── parameterization.py  # Density, height map, B-spline
-│   ├── projection.py        # Heaviside + beta-continuation
-│   ├── curvilinear.py       # B-spline SDF rasterization
+│   ├── parameterization.py   # Density, height map, B-spline
+│   ├── projection.py         # Heaviside + beta-continuation
+│   ├── curvilinear.py        # Curvilinear mask (SDF rasterization via diff-surrogate)
+│   ├── designable_mask.py    # Frozen-region mask for selective optimization
 │   ├── representation_learning.py  # VAE latent optimization
-│   ├── constraints_shared/  # Cross-domain DFM primitives
-│   └── robustness/          # MC robust optimization
+│   ├── constraints_shared/   # Cross-domain DFM primitives
+│   └── robustness/
+│       ├── core.py           # MC robust optimization (reparameterization, antithetic)
+│       ├── adaptive.py       # AdaptiveRobustOptimizer (re-export from diff-surrogate)
+│       ├── subspace.py       # Multi-axis perturbation (sidewall, thickness, corner)
+│       └── corner_opt.py     # Deterministic corner-sweep process-window optimization
 ├── workflows/
-│   ├── metalens.py          # Metalens inverse design
-│   ├── phc.py               # Photonic crystal bandgap
-│   ├── waveguide.py         # Waveguide bends / converters
-│   ├── broadband.py         # Multi-wavelength optimization
-│   ├── multi_objective.py   # Pareto front exploration
-│   └── end_to_end.py        # Spec-to-GDSII pipeline
-├── benchmark/               # Reference designs & metrics
+│   ├── metalens.py           # Metalens inverse design
+│   ├── dfm_metalens.py       # DFM-native metalens (C4 unified autograd graph)
+│   ├── phc.py                # Photonic crystal bandgap
+│   ├── waveguide.py          # Waveguide bends / converters
+│   ├── broadband.py          # Multi-wavelength optimization
+│   ├── multi_objective.py    # Pareto front exploration
+│   ├── splitter.py           # Beam splitter (stub)
+│   └── end_to_end.py         # Spec-to-GDSII pipeline
+├── utils/
+│   └── convergence.py        # Hybrid Z-score convergence monitor
+├── benchmark/                # Reference designs & metrics
 └── export/
-    └── gds.py               # GDS-II export (gdstk)
+    └── gds.py                # GDS-II export (gdstk)
 ```
 
 ---
@@ -295,11 +331,11 @@ diffnano/
 | Version | Scope | Status |
 |:--------|:------|:-------|
 | v0.1 | RCWA solver + metalens workflow | Done |
-| v0.2 | 2D FDTD + photonic crystal + FDFD | Code exists, validation pending |
-| v0.3 | 3D FDTD + adaptive robust optimization | Code exists, validation pending |
-| v0.4 | Neural surrogate + broadband | Early prototype |
-| v0.5 | Learned fabrication model + curvilinear masks | Experimental |
-| v0.6 | Multi-objective Pareto + end-to-end + VAE | Experimental |
+| v0.2 | 2D FDTD + photonic crystal + FDFD | Done |
+| v0.3 | 3D FDTD + adaptive robust optimization | Done |
+| v0.4 | Neural surrogate + broadband | Done |
+| v0.5 | Learned fabrication model + curvilinear masks | Done |
+| v0.6 | Multi-objective Pareto + end-to-end + VAE | Done |
 | v1.0 | Full benchmark suite + validation + arXiv paper | Planned |
 
 ---

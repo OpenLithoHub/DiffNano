@@ -1,6 +1,6 @@
 # DiffNano — Development Plan
 
-**Status:** v0.6 implemented (all milestones complete); 156 tests passing
+**Status:** v0.6 implemented (all milestones complete); 173 tests passing
 **Created:** 2026-05-23
 **Last updated:** 2026-05-28
 **Patent strategy:** C4/C5 assessed as NOT filing-worthy (PRISM arXiv:2602.15762 anticipates C4; reparameterization MC is standard). Direction pivots to engineering excellence over patent claims.
