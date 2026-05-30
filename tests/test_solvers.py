@@ -59,17 +59,15 @@ class TestRCWASolver:
         assert result.field.shape[1] == solver.n_fourier
 
     def test_gradient_flows(self, solver):
-        eps = torch.full((3, 50), 2.0, dtype=torch.float64, requires_grad=True)
+        torch.manual_seed(42)
+        eps = (2.0 + 0.5 * torch.rand(3, 50, dtype=torch.float64)).detach().requires_grad_(True)
         result = solver.forward(eps, wavelengths=[532.0])
-        loss = result.field.sum()
+        loss = result.field[:, solver.fourier_orders].sum()
         loss.backward()
         assert eps.grad is not None
         assert eps.grad.shape == eps.shape
-        # RCWA gradients through eigh can produce NaN for uniform permittivity;
-        # verify that non-NaN entries exist and are non-trivial where valid
-        valid_grad = eps.grad[~torch.isnan(eps.grad)]
-        if valid_grad.numel() > 0:
-            assert valid_grad.abs().max() > 1e-10, "Gradient is effectively zero"
+        assert torch.isfinite(eps.grad).all(), "NaN in RCWA gradient"
+        assert eps.grad.abs().max() > 1e-10, "Gradient is effectively zero"
 
     def test_diffraction_efficiency(self, solver):
         eps = torch.ones(5, 80, dtype=torch.float64) * 2.0

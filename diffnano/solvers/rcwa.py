@@ -1,10 +1,12 @@
 """Differentiable RCWA (Rigorous Coupled-Wave Analysis) solver.
 
 Implements an S-matrix formulation for periodic multilayer structures with
-full PyTorch autograd support.
+full PyTorch autograd support.  Supports both lossless and lossy materials
+(complex permittivity) by using general eigendecomposition (``torch.linalg.eig``)
+rather than Hermitian eigendecomposition.
 
 Batched mode: wavelengths and layers are processed with batched
-``torch.linalg.eigh`` and ``torch.linalg.solve`` for GPU utilization.
+``torch.linalg.eig`` and ``torch.linalg.solve`` for GPU utilization.
 
 References
 ----------
@@ -123,12 +125,9 @@ def _propagate_layer(
 
     P = eps_conv - Kx @ Kx
 
-    P_herm = (P + P.conj().mT) / 2.0
+    eigenvalues, eigenvectors = torch.linalg.eig(P)
 
-    eigenvalues, eigenvectors = torch.linalg.eigh(P_herm)
-
-    damping = 1e-10
-    gamma = torch.sqrt(eigenvalues.to(dtype) + damping)
+    gamma = torch.sqrt(eigenvalues + 1e-10)
 
     phase = torch.exp(1j * k0 * thickness_nm * gamma)
 
@@ -137,6 +136,11 @@ def _propagate_layer(
 
 class RCWASolver:
     """Differentiable RCWA solver for periodic multilayer structures.
+
+    Supports both lossless (real permittivity) and lossy (complex permittivity)
+    materials.  Uses ``torch.linalg.eig`` for general eigendecomposition so
+    that the anti-Hermitian part of the propagation matrix (corresponding to
+    material absorption) is preserved rather than discarded.
 
     Parameters
     ----------
@@ -261,17 +265,14 @@ class RCWASolver:
         # P = eps_conv - Kx^2: (n_wl, n_layers, n, n) - (n_wl, 1, n, n)
         P = eps_conv_batch - kx_sq_mat.unsqueeze(1)
 
-        # Hermitian symmetrize
-        P_herm = (P + P.conj().transpose(-2, -1)) / 2.0
-
         # 4. Batch eigendecomposition: (n_wl * n_layers, n, n)
-        P_flat = P_herm.reshape(n_wl * n_layers, n, n)
-        eigenvalues_flat, eigenvectors_flat = torch.linalg.eigh(P_flat)
+        P_flat = P.reshape(n_wl * n_layers, n, n)
+        eigenvalues_flat, eigenvectors_flat = torch.linalg.eig(P_flat)
         eigenvalues = eigenvalues_flat.reshape(n_wl, n_layers, n)
         eigenvectors = eigenvectors_flat.reshape(n_wl, n_layers, n, n)
 
         # 5. Compute gamma and phase for all (wl, layer)
-        gamma = torch.sqrt(eigenvalues.to(dtype) + 1e-10)  # (n_wl, n_layers, n)
+        gamma = torch.sqrt(eigenvalues + 1e-10)  # (n_wl, n_layers, n)
 
         layer_thickness = thickness_nm if thickness_nm is not None else px / n_layers
         k0_expanded = k0_all.unsqueeze(1).unsqueeze(2)  # (n_wl, 1, 1)
