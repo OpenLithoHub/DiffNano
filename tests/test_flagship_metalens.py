@@ -5,11 +5,10 @@ verifying finite losses, gradient flow, and that the coupled approach includes
 the lithography model in its loss.
 """
 
-import torch
 import pytest
+import torch
 
 from diffnano.workflows.dfm_metalens import DFMMetalensDesigner
-from diffnano.design.constraints_shared import combined_fabrication_penalty
 
 
 @pytest.fixture
@@ -33,8 +32,12 @@ class TestFlagshipMetalensCoupled:
 
     def test_coupled_produces_finite_losses(self, designer):
         density, history, breakdown = designer.optimize(
-            n_steps=10, lr=1e-2, lambda_optical=1.0, lambda_litho=0.1,
-            lambda_fab=0.01, verbose=False,
+            n_steps=10,
+            lr=1e-2,
+            lambda_optical=1.0,
+            lambda_litho=0.1,
+            lambda_fab=0.01,
+            verbose=False,
         )
         assert len(history) == 10
         for val in history:
@@ -43,15 +46,18 @@ class TestFlagshipMetalensCoupled:
 
     def test_coupled_has_litho_component(self, designer):
         _, _, breakdown = designer.optimize(
-            n_steps=5, lr=1e-2, verbose=False,
+            n_steps=5,
+            lr=1e-2,
+            verbose=False,
         )
         litho_vals = [b["litho"] for b in breakdown]
         assert all(v > 0 for v in litho_vals), "Litho loss should be positive (model is active)"
 
     def test_coupled_gradient_flows(self, designer):
         density = torch.rand(*designer.grid_shape, dtype=torch.float64, requires_grad=True)
-        total, _ = designer.total_loss(density, lambda_optical=1.0, lambda_litho=0.1,
-                                        lambda_fab=0.01, beta=10.0)
+        total, _ = designer.total_loss(
+            density, lambda_optical=1.0, lambda_litho=0.1, lambda_fab=0.01, beta=10.0
+        )
         total.backward()
         assert density.grad is not None
         assert not torch.isnan(density.grad).any()
@@ -63,7 +69,9 @@ class TestFlagshipMetalensDecoupled:
 
     def test_decoupled_produces_finite_losses(self, designer):
         density, history = designer.decoupled_baseline(
-            n_steps=10, lr=1e-2, verbose=False,
+            n_steps=10,
+            lr=1e-2,
+            verbose=False,
         )
         assert len(history) == 10
         for val in history:
@@ -72,7 +80,9 @@ class TestFlagshipMetalensDecoupled:
 
     def test_decoupled_result_has_finite_litho_posthoc(self, designer):
         density, _ = designer.decoupled_baseline(
-            n_steps=10, lr=1e-2, verbose=False,
+            n_steps=10,
+            lr=1e-2,
+            verbose=False,
         )
         mask = designer.density_param(density, beta=10.0)
         litho = designer.litho_model.forward(mask)
