@@ -1,12 +1,9 @@
 #!/usr/bin/env python
-"""Flagship metalens + lithography DFM co-optimization demo.
+"""Flagship metalens + lithography DFM co-optimization demo (multi-seed).
 
 Runs coupled (co-design: optical + litho + fab) and decoupled (optical-only
-baseline) optimization on a 20x20 metalens grid, then compares results.
-
-The coupled approach optimizes the *printed* mask quality jointly with optical
-performance. The decoupled baseline ignores lithography during optimization,
-then evaluates litho quality post-hoc on the result.
+baseline) optimization across 10 seeds (42..51), then reports aggregated
+results with Wilcoxon signed-rank significance tests.
 
 Usage:
     python scripts/flagship_metalens_dfm.py
@@ -14,12 +11,15 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
+from scipy.stats import wilcoxon
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -28,11 +28,11 @@ from diffnano.workflows.dfm_metalens import DFMMetalensDesigner
 N_STEPS = 150
 GRID_SIZE = 20
 PIXEL_SIZE_NM = 100.0
-SEED = 42
+DEFAULT_SEEDS = list(range(42, 52))
 RESULTS_PATH = Path(__file__).resolve().parent.parent / "flagship_metalens_results.json"
 
 
-def _make_designer() -> DFMMetalensDesigner:
+def _make_designer(device: str = "cpu") -> DFMMetalensDesigner:
     return DFMMetalensDesigner(
         wavelength_nm=940.0,
         numerical_aperture=0.3,
@@ -43,7 +43,7 @@ def _make_designer() -> DFMMetalensDesigner:
         fourier_orders=3,
         litho_wavelength_nm=193.0,
         litho_na=1.35,
-        device="cpu",
+        device=device,
     )
 
 
@@ -58,18 +58,16 @@ def _evaluate(designer: DFMMetalensDesigner, density: torch.Tensor, beta: float 
     return optical_loss, litho_epe, fab_penalty
 
 
-def run() -> dict:
-    torch.manual_seed(SEED)
+def _run_single_seed(seed: int, n_steps: int, device: str) -> dict:
+    """Run coupled + decoupled for a single seed. Returns per-seed results."""
+    torch.manual_seed(seed)
 
-    designer = _make_designer()
-    print(f"Grid: {designer.grid_shape}, pixel: {PIXEL_SIZE_NM} nm, steps: {N_STEPS}")
-    print()
+    designer = _make_designer(device=device)
 
     # --- Coupled (co-design) ---
-    print("[1/2] Coupled co-design (optical + litho + fab)...")
     t0 = time.perf_counter()
     density_coupled, coupled_history, coupled_breakdown = designer.optimize(
-        n_steps=N_STEPS,
+        n_steps=n_steps,
         lr=1e-2,
         lambda_optical=1.0,
         lambda_litho=0.1,
@@ -78,13 +76,11 @@ def run() -> dict:
     )
     coupled_time = time.perf_counter() - t0
     opt_c, litho_c, fab_c = _evaluate(designer, density_coupled)
-    print(f"  Done in {coupled_time:.1f}s | optical={opt_c:.6f}  litho_epe={litho_c:.6f}  fab={fab_c:.6f}")
 
     # --- Decoupled baseline ---
-    print("[2/2] Decoupled baseline (optical only, litho evaluated post-hoc)...")
     t0 = time.perf_counter()
     density_decoupled, decoupled_history = designer.decoupled_baseline(
-        n_steps=N_STEPS,
+        n_steps=n_steps,
         lr=1e-2,
         lambda_optical=1.0,
         lambda_fab=0.01,
@@ -92,51 +88,111 @@ def run() -> dict:
     )
     decoupled_time = time.perf_counter() - t0
     opt_d, litho_d, fab_d = _evaluate(designer, density_decoupled)
-    print(f"  Done in {decoupled_time:.1f}s | optical={opt_d:.6f}  litho_epe={litho_d:.6f}  fab={fab_d:.6f}")
 
-    # --- Summary table ---
-    print()
-    print("=" * 70)
-    print(f"  {'Metric':<22s} {'Coupled':>14s} {'Decoupled':>14s} {'Delta':>14s}")
-    print("-" * 70)
-    for label, vc, vd in [
-        ("Optical loss", opt_c, opt_d),
-        ("Litho EPE", litho_c, litho_d),
-        ("Fabrication penalty", fab_c, fab_d),
-    ]:
-        delta = vc - vd
-        sign = "+" if delta > 0 else ""
-        print(f"  {label:<22s} {vc:14.6f} {vd:14.6f} {sign}{delta:13.6f}")
-    print("-" * 70)
-    print(f"  {'Wall time (s)':<22s} {coupled_time:14.1f} {decoupled_time:14.1f}")
-    print("=" * 70)
+    print(
+        f"  seed={seed:>2d} | coupled: opt={opt_c:.6f} litho={litho_c:.6f} fab={fab_c:.6f} "
+        f"t={coupled_time:.1f}s | decoupled: opt={opt_d:.6f} litho={litho_d:.6f} fab={fab_d:.6f} "
+        f"t={decoupled_time:.1f}s"
+    )
 
-    if litho_c < litho_d:
-        pct = (litho_d - litho_c) / litho_d * 100
-        print(f"\n  Coupled approach reduces litho EPE by {pct:.1f}% (fabrication-aware advantage).")
-    else:
-        print("\n  Litho EPE comparable or slightly higher in coupled (grid too small for clear separation).")
-
-    results = {
+    return {
+        "seed": seed,
         "coupled": {
-            "loss_history": coupled_history,
             "optical_loss": opt_c,
             "litho_epe": litho_c,
             "fab_penalty": fab_c,
             "wall_time_s": round(coupled_time, 2),
+            "loss_history": coupled_history,
         },
         "decoupled": {
-            "loss_history": decoupled_history,
             "optical_loss": opt_d,
             "litho_epe": litho_d,
             "fab_penalty": fab_d,
             "wall_time_s": round(decoupled_time, 2),
+            "loss_history": decoupled_history,
         },
+    }
+
+
+def run(seeds: list[int] | None = None, device: str = "cpu") -> dict:
+    if seeds is None:
+        seeds = DEFAULT_SEEDS
+
+    print(f"Grid: {GRID_SIZE}x{GRID_SIZE}, pixel: {PIXEL_SIZE_NM} nm, steps: {N_STEPS}, "
+          f"seeds: {seeds[0]}..{seeds[-1]} ({len(seeds)} seeds), device: {device}")
+    print()
+
+    per_seed = []
+    for seed in seeds:
+        per_seed.append(_run_single_seed(seed, N_STEPS, device))
+
+    # --- Aggregate ---
+    metrics = ["optical_loss", "litho_epe", "fab_penalty", "wall_time_s"]
+
+    coupled_vals = {m: [s["coupled"][m] for s in per_seed] for m in metrics}
+    decoupled_vals = {m: [s["decoupled"][m] for s in per_seed] for m in metrics}
+
+    def _mean_std(vals):
+        return float(np.mean(vals)), float(np.std(vals, ddof=1))
+
+    coupled_stats = {m: _mean_std(coupled_vals[m]) for m in metrics}
+    decoupled_stats = {m: _mean_std(decoupled_vals[m]) for m in metrics}
+
+    # --- Wilcoxon signed-rank test (paired: coupled vs decoupled per seed) ---
+    wilcoxon_results = {}
+    for m in metrics:
+        c = np.array(coupled_vals[m])
+        d = np.array(decoupled_vals[m])
+        diff = c - d
+        if np.all(diff == 0):
+            wilcoxon_results[m] = {"statistic": None, "p_value": None, "significant_005": False}
+        else:
+            stat, pval = wilcoxon(c, d, alternative="two-sided")
+            wilcoxon_results[m] = {
+                "statistic": float(stat),
+                "p_value": float(pval),
+                "significant_005": bool(pval < 0.05),
+            }
+
+    # --- Summary table ---
+    print()
+    print("=" * 90)
+    print(f"  {'Metric':<22s} {'Coupled (mean±std)':>22s} {'Decoupled (mean±std)':>22s} {'Wilcoxon p':>12s}")
+    print("-" * 90)
+    for m in metrics:
+        cm, cs = coupled_stats[m]
+        dm, ds = decoupled_stats[m]
+        pval = wilcoxon_results[m]["p_value"]
+        p_str = f"{pval:.4f}" if pval is not None else "N/A"
+        print(f"  {m:<22s} {cm:>8.6f}±{cs:<8.6f}  {dm:>8.6f}±{ds:<8.6f}  {p_str:>12s}")
+    print("=" * 90)
+
+    sig_metrics = [m for m in metrics if wilcoxon_results[m]["significant_005"]]
+    if sig_metrics:
+        print(f"\n  Significant differences (p<0.05): {', '.join(sig_metrics)}")
+    else:
+        print("\n  No metrics reach p<0.05 significance with this seed count.")
+
+    results = {
+        "seeds": seeds,
+        "n_seeds": len(seeds),
+        "per_seed": per_seed,
+        "aggregated": {
+            "coupled": {
+                m: {"mean": coupled_stats[m][0], "std": coupled_stats[m][1]}
+                for m in metrics
+            },
+            "decoupled": {
+                m: {"mean": decoupled_stats[m][0], "std": decoupled_stats[m][1]}
+                for m in metrics
+            },
+        },
+        "wilcoxon": wilcoxon_results,
         "config": {
             "n_steps": N_STEPS,
             "grid_size": GRID_SIZE,
             "pixel_size_nm": PIXEL_SIZE_NM,
-            "seed": SEED,
+            "device": device,
         },
     }
 
@@ -148,4 +204,10 @@ def run() -> dict:
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description="Multi-seed flagship metalens DFM benchmark")
+    parser.add_argument("--seeds", type=int, nargs="+", default=None,
+                        help="Seeds to use (default: 42..51)")
+    parser.add_argument("--device", type=str, default="cpu",
+                        help="Torch device (default: cpu)")
+    args = parser.parse_args()
+    run(seeds=args.seeds, device=args.device)
