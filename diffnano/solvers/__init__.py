@@ -22,6 +22,8 @@ __all__ = [
     "FDTDSolver2D",
     "FDTDSolver3D",
     "NeuralSurrogate",
+    "CrossAttnRCWAProxy",
+    "TwoStageOptimizer",
     "HopkinsLithoModel",
     "LearnedFabModel",
     "DifferentiableResistModel",
@@ -94,6 +96,14 @@ def __getattr__(name):
         from diffnano.solvers.surrogate import NeuralSurrogate
 
         return NeuralSurrogate
+    if name == "CrossAttnRCWAProxy":
+        from diffnano.solvers.proxy_prescreen import CrossAttnRCWAProxy
+
+        return CrossAttnRCWAProxy
+    if name == "TwoStageOptimizer":
+        from diffnano.solvers.proxy_prescreen import TwoStageOptimizer
+
+        return TwoStageOptimizer
     if name == "HopkinsLithoModel":
         from diffnano.solvers.litho import HopkinsLithoModel
 
