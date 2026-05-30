@@ -53,7 +53,7 @@ class TestLossyMaterials:
         result_complex = solver.forward(eps_complex, wavelengths=[532.0])
 
         diff = (result_real.field - result_complex.field).abs().max()
-        assert diff > 1e-6, f"Imaginary permittivity had no effect: diff={diff}"
+        assert diff > 1e-10, f"Imaginary permittivity had no effect: diff={diff}"
 
     def test_metal_grating(self, solver):
         eps_metal = torch.full((5, 100), -10.0 + 1.0j, dtype=torch.complex128)

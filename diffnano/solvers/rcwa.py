@@ -5,16 +5,22 @@ full PyTorch autograd support.  Supports both lossless and lossy materials
 (complex permittivity) by using general eigendecomposition (``torch.linalg.eig``)
 rather than Hermitian eigendecomposition.
 
-Two propagation backends are available:
+Three propagation backends are available:
 
-- ``"matrix_exp"`` (default): computes the layer transfer matrix via
-  ``torch.linalg.matrix_exp``, which avoids the numerically unstable backward
-  pass through eigendecomposition-based phase reassembly.  Eigenvalues are
-  still computed to obtain the matrix square root of P, but the critical
-  propagation step uses ``matrix_exp`` whose autograd is well-conditioned.
+- ``"matrix_sqrt"`` (default): computes the matrix square root of P via
+  Denman–Beavers iteration (Newton–Schulz), then propagates via
+  ``torch.linalg.matrix_exp``.  **No eigendecomposition is used at any
+  point**, so degeneracies in the propagation matrix do not cause gradient
+  instability.  This is the method recommended by the Delft/ASML matrix
+  square root RCWA paper (PIER C, 2026).
+
+- ``"eig_expm"``: computes eigenvalues/vectors of P to obtain sqrt(P) via
+  spectral decomposition, then uses ``matrix_exp`` for propagation.
+  The eigendecomposition is still in the autograd graph, so gradients may
+  be unstable at degeneracies.  Kept for regression comparison.
 
 - ``"eig"``: original approach using ``V @ diag(exp(i*k0*d*gamma)) @ V^{-1}``.
-  Kept for comparison and regression testing.
+  Kept as a baseline for accuracy comparison.
 
 Batched mode: wavelengths and layers are processed with batched
 ``torch.linalg.eig`` and ``torch.linalg.solve`` for GPU utilization.
@@ -23,8 +29,9 @@ References
 ----------
 - Liu & Fan (2020), grcwa: arXiv:2005.01481 (baseline, no degeneracy handling)
 - Kim & Lee (2023), TORCWA: CPC 282, 108552 (broadening-based stabilization)
-- Matrix square root RCWA: Delft + ASML, PIER C vol.163, 2026
+- Matrix square root RCWA: Delft + ASML, PIER C vol.163, 60–72, 2026
 - TorchRDIT / R-DIT: Huang et al., Opt. Express 32, 13986, 2024
+- Blanes et al., scaling-and-squaring matrix exponential: arXiv:2404.12789, 2024
 """
 
 from __future__ import annotations
@@ -112,6 +119,90 @@ def _build_toeplitz_batched(
     return eps_conv
 
 
+def _matrix_sqrt_denman_beavers(
+    A: torch.Tensor,
+    max_iter: int = 40,
+    tol: float = 1e-8,
+) -> torch.Tensor:
+    """Compute matrix square root via Denman–Beavers iteration.
+
+    For complex matrices (as arise in RCWA where P = eps_conv - Kx^2 can have
+    negative-real eigenvalues), we apply a phase rotation to move eigenvalues
+    away from the branch cut before iterating, then rotate back:
+
+        sqrt(A) = exp(-i*pi/8) * sqrt(exp(i*pi/4) * A)
+
+    The iteration is:
+
+        Y_0 = A,  Z_0 = I
+        Y_{k+1} = 0.5 * (Y_k + inv(Z_k))
+        Z_{k+1} = 0.5 * (Z_k + inv(Y_k))
+
+    Converges to Y -> sqrt(A), Z -> inv(sqrt(A)).
+
+    Uses ``torch.linalg.solve`` for the inverse (fully differentiable).
+
+    This function **never calls ``torch.linalg.eig``** and is therefore
+    safe from eigendecomposition gradient instability at degeneracies.
+
+    Parameters
+    ----------
+    A : Tensor, shape ``(..., n, n)`` complex128
+        Input matrix (batched).
+    max_iter : int
+        Maximum Newton iterations.
+    tol : float
+        Convergence tolerance on the Frobenius norm of (Y^2 - A) / ||A||.
+
+    Returns
+    -------
+    sqrt_A : Tensor, shape ``(..., n, n)`` complex128
+        Matrix square root of A.
+    """
+    batch_shape = A.shape[:-2]
+    n = A.shape[-1]
+    device = A.device
+    dtype = A.dtype
+
+    I = torch.eye(n, dtype=dtype, device=device).expand(*batch_shape, n, n)
+
+    # Phase rotation to move eigenvalues away from the negative real axis
+    phase = torch.exp(torch.tensor(1j * math.pi / 4, dtype=dtype, device=device))
+    phase_inv_sqrt = torch.exp(torch.tensor(-1j * math.pi / 8, dtype=dtype, device=device))
+    A_rot = phase * A
+
+    # Scale down so spectral radius is manageable
+    norm_a = A_rot.norm(dim=(-2, -1), keepdim=True).clamp(min=1e-12)
+    # Aim for ||A_scaled|| ~ 1 by dividing by sqrt(norm)
+    scale = (norm_a.sqrt().clamp(min=1.0))
+    A_scaled = A_rot / scale
+
+    Y = A_scaled.clone()
+    Z = I.clone()
+
+    for _ in range(max_iter):
+        inv_Z = torch.linalg.solve(Z, I)
+        Y_new = 0.5 * (Y + inv_Z)
+        inv_Y = torch.linalg.solve(Y, I)
+        Z_new = 0.5 * (Z + inv_Y)
+
+        residual = (Y_new @ Y_new - A_scaled).norm(dim=(-2, -1), keepdim=True)
+        if (residual / norm_a < tol).all():
+            Y = Y_new
+            break
+
+        Y = Y_new
+        Z = Z_new
+
+    # Undo scaling: sqrt(c*A) = sqrt(c)*sqrt(A) for scalar c
+    Y = Y * scale.sqrt()
+
+    # Undo phase rotation
+    Y = phase_inv_sqrt * Y
+
+    return Y
+
+
 def _propagate_layer(
     eps_conv: torch.Tensor,
     kx_norm: torch.Tensor,
@@ -121,21 +212,21 @@ def _propagate_layer(
     period_x: float,
     period_y: float,
     *,
-    solver_backend: str = "matrix_exp",
+    solver_backend: str = "matrix_sqrt",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute forward/backward propagation matrices for one layer.
 
     Parameters
     ----------
     solver_backend : str
-        ``"matrix_exp"`` or ``"eig"``.
+        ``"matrix_sqrt"``, ``"eig_expm"``, or ``"eig"``.
 
     Returns
     -------
     phase : Tensor
-        Phase factors (eig backend) or transfer matrix (matrix_exp backend).
+        Phase factors (eig backend) or transfer matrix (matrix_sqrt/eig_expm backends).
     eigenvectors : Tensor
-        Eigenvector matrix (eig backend) or identity (matrix_exp backend).
+        Eigenvector matrix (eig/eig_expm backends) or identity (matrix_sqrt backend).
     """
     n = eps_conv.shape[0]
     device = eps_conv.device
@@ -155,12 +246,16 @@ def _propagate_layer(
         gamma = torch.sqrt(eigenvalues + 1e-10)
         phase = torch.exp(1j * k0 * thickness_nm * gamma)
         return phase, eigenvectors
-    else:
+    elif solver_backend == "eig_expm":
         eigenvalues, eigenvectors = torch.linalg.eig(P)
         sqrt_eigenvalues = torch.sqrt(eigenvalues + 1e-10)
         sqrt_P = eigenvectors @ torch.diag(sqrt_eigenvalues) @ torch.linalg.inv(eigenvectors)
         transfer = torch.linalg.matrix_exp(1j * k0 * thickness_nm * sqrt_P)
         return transfer, eigenvectors
+    else:  # matrix_sqrt — true eig-free path
+        sqrt_P = _matrix_sqrt_denman_beavers(P)
+        transfer = torch.linalg.matrix_exp(1j * k0 * thickness_nm * sqrt_P)
+        return transfer, torch.eye(n, dtype=dtype, device=device)
 
 
 class RCWASolver:
@@ -188,8 +283,8 @@ class RCWASolver:
     degen_tol : float
         Degeneracy tolerance for eigendecomposition backward.
     solver_backend : str
-        Propagation method: ``"matrix_exp"`` (default, stable backward) or
-        ``"eig"`` (legacy, for comparison).
+        Propagation method: ``"matrix_sqrt"`` (default, truly eig-free),
+        ``"eig_expm"`` (eig + matrix_exp), or ``"eig"`` (legacy baseline).
     """
 
     def __init__(
@@ -201,7 +296,7 @@ class RCWASolver:
         eps_substrate: float = 1.0,
         device: str | torch.device = "cpu",
         degen_tol: float = 1e-6,
-        solver_backend: str = "matrix_exp",
+        solver_backend: str = "matrix_sqrt",
     ):
         self.fourier_orders = fourier_orders
         self.n_fourier = 2 * fourier_orders + 1
@@ -211,9 +306,10 @@ class RCWASolver:
         self.eps_substrate = eps_substrate
         self.device = torch.device(device)
         self.degen_tol = degen_tol
-        if solver_backend not in ("eig", "matrix_exp"):
+        if solver_backend not in ("eig", "eig_expm", "matrix_sqrt"):
             raise ValueError(
-                f"solver_backend must be 'eig' or 'matrix_exp', got {solver_backend!r}"
+                f"solver_backend must be 'matrix_sqrt', 'eig_expm', or 'eig', "
+                f"got {solver_backend!r}"
             )
         self.solver_backend = solver_backend
 
@@ -317,26 +413,33 @@ class RCWASolver:
         # P = eps_conv - Kx^2: (n_wl, n_layers, n, n) - (n_wl, 1, n, n)
         P = eps_conv_batch - kx_sq_mat.unsqueeze(1)
 
-        # 4. Batch eigendecomposition: (n_wl * n_layers, n, n)
-        P_flat = P.reshape(n_wl * n_layers, n, n)
-        eigenvalues_flat, eigenvectors_flat = torch.linalg.eig(P_flat)
-        eigenvalues = eigenvalues_flat.reshape(n_wl, n_layers, n)
-        eigenvectors = eigenvectors_flat.reshape(n_wl, n_layers, n, n)
-
         layer_thickness = thickness_nm if thickness_nm is not None else px / n_layers
 
-        if self.solver_backend == "eig":
-            return self._forward_1d_eig(
-                eigenvalues, eigenvectors, n_layers, n_wl, n,
+        if self.solver_backend == "matrix_sqrt":
+            return self._forward_1d_matrix_sqrt(
+                P, n_layers, n_wl, n,
                 k0_all, layer_thickness, wavelengths, polarization, theta,
                 device, dtype,
             )
         else:
-            return self._forward_1d_matrix_exp(
-                eigenvalues, eigenvectors, P, n_layers, n_wl, n,
-                k0_all, layer_thickness, wavelengths, polarization, theta,
-                device, dtype,
-            )
+            # eig and eig_expm both need eigendecomposition
+            P_flat = P.reshape(n_wl * n_layers, n, n)
+            eigenvalues_flat, eigenvectors_flat = torch.linalg.eig(P_flat)
+            eigenvalues = eigenvalues_flat.reshape(n_wl, n_layers, n)
+            eigenvectors = eigenvectors_flat.reshape(n_wl, n_layers, n, n)
+
+            if self.solver_backend == "eig":
+                return self._forward_1d_eig(
+                    eigenvalues, eigenvectors, n_layers, n_wl, n,
+                    k0_all, layer_thickness, wavelengths, polarization, theta,
+                    device, dtype,
+                )
+            else:  # eig_expm
+                return self._forward_1d_eig_expm(
+                    eigenvalues, eigenvectors, n_layers, n_wl, n,
+                    k0_all, layer_thickness, wavelengths, polarization, theta,
+                    device, dtype,
+                )
 
     def _forward_1d_eig(
         self,
@@ -391,10 +494,8 @@ class RCWASolver:
             },
         )
 
-    def _forward_1d_matrix_exp(
+    def _forward_1d_matrix_sqrt(
         self,
-        eigenvalues: torch.Tensor,
-        eigenvectors: torch.Tensor,
         P: torch.Tensor,
         n_layers: int,
         n_wl: int,
@@ -407,12 +508,67 @@ class RCWASolver:
         device: torch.device,
         dtype: torch.dtype,
     ) -> SimResult:
-        """Matrix-exponential propagation: transfer = exp(1j * k0 * d * sqrt(P)).
+        """Eig-free propagation via Denman–Beavers matrix square root.
 
-        Eigenvalues are used to compute sqrt(P) via V @ diag(sqrt(lambda)) @ V^{-1},
-        but the critical propagation step uses ``torch.linalg.matrix_exp``, whose
-        backward pass is numerically more stable than eigendecomposition-based
-        phase reassembly.
+        No call to ``torch.linalg.eig`` appears anywhere in this path.
+        The matrix square root is computed iteratively, then the transfer
+        matrix is formed via ``matrix_exp``.
+        """
+        P_flat = P.reshape(n_wl * n_layers, n, n)
+
+        sqrt_P_flat = _matrix_sqrt_denman_beavers(P_flat)
+        sqrt_P = sqrt_P_flat.reshape(n_wl, n_layers, n, n)
+
+        k0_expanded = k0_all.view(n_wl, 1, 1, 1)
+        A = 1j * k0_expanded * layer_thickness * sqrt_P
+        A_flat = A.reshape(n_wl * n_layers, n, n)
+        transfer_flat = torch.linalg.matrix_exp(A_flat)
+        transfer = transfer_flat.reshape(n_wl, n_layers, n, n)
+
+        total_field = torch.ones(n_wl, n, dtype=dtype, device=device)
+        for li in range(n_layers):
+            T_li = transfer[:, li]
+            total_field = torch.bmm(T_li, total_field.unsqueeze(-1)).squeeze(-1)
+
+        eff = (total_field * total_field.conj()).real
+        eff = torch.clamp(eff, min=0.0)
+        totals = eff.sum(dim=-1, keepdim=True)
+        totals = torch.where(totals > 0, totals, torch.ones_like(totals))
+        eff = eff / totals
+
+        return SimResult(
+            field=eff.to(torch.float64),
+            wavelengths=wavelengths,
+            metadata={
+                "n_layers": n_layers,
+                "fourier_orders": self.fourier_orders,
+                "polarization": polarization,
+                "theta": theta,
+                "solver_backend": "matrix_sqrt",
+            },
+        )
+
+    def _forward_1d_eig_expm(
+        self,
+        eigenvalues: torch.Tensor,
+        eigenvectors: torch.Tensor,
+        n_layers: int,
+        n_wl: int,
+        n: int,
+        k0_all: torch.Tensor,
+        layer_thickness: float,
+        wavelengths: torch.Tensor,
+        polarization: str,
+        theta: float,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> SimResult:
+        """Eig + matrix-exponential propagation: transfer = exp(1j * k0 * d * sqrt(P)).
+
+        sqrt(P) is computed via eigendecomposition (V @ diag(sqrt(lambda)) @ V^{-1}),
+        then the transfer matrix uses ``torch.linalg.matrix_exp``.  The eig
+        backward pass is still in the autograd graph, so gradients may be
+        unstable at degeneracies.
         """
         # Compute sqrt(P) for all (wl, layer) pairs
         sqrt_eigenvalues = torch.sqrt(eigenvalues + 1e-10)  # (n_wl, n_layers, n)
@@ -466,7 +622,7 @@ class RCWASolver:
                 "fourier_orders": self.fourier_orders,
                 "polarization": polarization,
                 "theta": theta,
-                "solver_backend": "matrix_exp",
+                "solver_backend": "eig_expm",
             },
         )
 
