@@ -29,6 +29,9 @@ Differentiable electromagnetic simulation is an active field with strong existin
 | [Lumerical](https://www.ansys.com/products/photonics) | FDTD / RCWA | Adjoint | Commercial, industry standard |
 | [SPINS](https://github.com/stanfordnlp/spins) | FDTD / FDFD | Yes | Stanford, topology optimization |
 | [Inkstone](https://github.com/tigh-ff/inkstone) | RCWA | Yes | Berkeley, open-source |
+| [meent](https://github.com/tigh-ff/meent) | RCWA | Yes (JAX / PyTorch / NumPy) | Multi-backend RCWA, 2024, flexible autodiff |
+| [TorchRDIT](https://github.com/tigh-ff/TorchRDIT) | R-DIT | Yes (PyTorch) | Eigendecomposition-free via Taylor-expanded matrix exp, 2024 |
+| Matrix sqrt RCWA | RCWA (matrix exp) | Analytical | Delft + ASML, PIER C vol.163, 2026 |
 
 DiffNano was built to learn how these solvers work by reimplementing them from scratch in PyTorch. It is not faster, more accurate, or more capable than the tools above.
 
@@ -39,7 +42,7 @@ DiffNano was built to learn how these solvers work by reimplementing them from s
 | Solver | Type | Best For |
 |:-------|:-----|:---------|
 | **Differentiable FDTD** | 2D/3D time-domain with CPML | Broadband, transient, arbitrary geometries |
-| **Differentiable RCWA** | Fourier-domain, periodic structures | Metasurfaces, gratings, metalenses |
+| **Differentiable RCWA** | Fourier-domain, periodic structures (eig + matrix_exp backends) | Metasurfaces, gratings, metalenses |
 | **Differentiable FDFD** | Frequency-domain, steady-state | CW problems, GPU-native dense solve |
 | **Neural Surrogate** | CNN-accelerated RCWA | 10-50x optimization speedup |
 | **Implicit Differentiation** | Matrix-free GMRES + adjoint | Memory-efficient FDFD gradients |
@@ -195,37 +198,38 @@ The unified autograd graph propagates lithography printability gradients back in
 
 ### 1. Academic Paper Comparison (Table 1)
 
-| Metric | DiffNano (this work) | TorchRDIT (Huang et al., 2024)¹ | Meent (Kim et al., 2024)² | Benchmarking Study (Mansson et al., 2025)³ |
-|:-------|:---------------------|:--------------------------------|:--------------------------|:--------------------------------------------|
-| **Core method** | RCWA + FDFD + FDTD + Neural Surrogate | R-DIT (eigendecomposition-free) | RCWA (multi-backend) | 9 algorithms on RCWA backend |
-| **Speedup claim** | 10–50x via CNN surrogate (inference only) | Up to 16.2x vs standard RCWA | N/A (framework paper) | Varies by algorithm |
-| **Robust optimization** | Differentiable MC, +31% yield (C5) | No | No | No (nominal only) |
-| **Fabrication-aware** | Hopkins lithography model in autograd | No | No | No |
-| **GPU backend** | PyTorch CUDA/MPS | PyTorch CUDA | JAX / PyTorch / NumPy | CPU (RCWA) |
+| Metric | DiffNano (this work) | TorchRDIT (Huang et al., 2024)¹ | Meent (Kim et al., 2024)² | Benchmarking Study (Mansson et al., 2025)³ | Matrix sqrt RCWA (Delft/ASML, 2026)⁴ |
+|:-------|:---------------------|:--------------------------------|:--------------------------|:--------------------------------------------|:--------------------------------------|
+| **Core method** | RCWA (eig + matrix_exp) + FDFD + FDTD + Neural Surrogate | R-DIT (eigendecomposition-free) | RCWA (multi-backend) | 9 algorithms on RCWA backend | Matrix square root via exp(P^(1/2)) |
+| **Speedup claim** | 10–50x via CNN surrogate (inference only) | Up to 16.2x vs standard RCWA | N/A (framework paper) | Varies by algorithm | Numerically more stable backward vs eig |
+| **Robust optimization** | Differentiable MC, +31% yield (C5) | No | No | No (nominal only) | No |
+| **Fabrication-aware** | Hopkins lithography model in autograd | No | No | No | No |
+| **GPU backend** | PyTorch CUDA/MPS | PyTorch CUDA | JAX / PyTorch / NumPy | CPU (RCWA) | Not specified |
 
-> **Comparability note:** TorchRDIT's 16.2x speedup is measured on eigendecomposition elimination (single-wavelength, periodic structures). DiffNano's 10–50x surrogate speedup covers the full RCWA forward pass but is inference-only and problem-specific. These numbers are **not directly comparable** — different hardware, problem sizes, and measurement methodology.
+> **Comparability note:** TorchRDIT's 16.2x speedup is measured on eigendecomposition elimination (single-wavelength, periodic structures). DiffNano's 10–50x surrogate speedup covers the full RCWA forward pass but is inference-only and problem-specific. These numbers are **not directly comparable** — different hardware, problem sizes, and measurement methodology. DiffNano's matrix_exp backend uses `torch.linalg.matrix_exp` for propagation (inspired by the Delft/ASML approach), keeping `eig` for the matrix square root of P; the benefit is more stable backward gradients rather than forward speedup.
 
 **References:**
 
 1. Huang et al., "Eigendecomposition-free inverse design of meta-optics devices," *Nanophotonics*, 2024. [PubMed 38859356](https://pubmed.ncbi.nlm.nih.gov/38859356/)
 2. Kim et al., "Meent: Differentiable Electromagnetic Simulation," arXiv:2406.12904, 2024. [arXiv](https://arxiv.org/abs/2406.12904)
 3. Mansson et al., "Benchmarking Optimization Methods for Nanophotonics," *Advanced Optical Materials*, 2025. [DOI:10.1002/adom.202500195](https://advanced.onlinelibrary.wiley.com/doi/10.1002/adom.202500195)
+4. Matrix Square Root Based Differentiable RCWA, *PIER C*, vol. 163, 2026 (Delft University of Technology + ASML)
 
 ### 2. Open-Source Tool Comparison (Table 2)
 
-| Feature | DiffNano | Tidy3D v2.10.1 | MEEP v1.32.0 | TorchRDIT | FDTDX (2026) | Ceviche (archived) |
-|:--------|:---------|:---------------|:-------------|:----------|:-------------|:-------------------|
-| **RCWA** | Yes (lossy + lossless) | No | No | No (R-DIT) | No | No |
-| **FDTD** | 2D + 3D | 3D | 3D | No | 3D | 2D |
-| **FDFD** | Yes | No | No | No | No | Yes |
-| **Neural Surrogate** | Yes (CNN) | No | No | No | No | No |
-| **GPU** | PyTorch CUDA/MPS | Cloud GPU (proprietary) | No (CPU, OpenMP) | PyTorch CUDA | JAX/XLA | No (NumPy) |
-| **Autograd** | PyTorch native | Adjoint (JAX) | Adjoint wrapper | PyTorch native | JAX native | HIPS autograd |
-| **Fabrication-aware** | Yes (Hopkins litho) | No | No | No | No | No |
-| **Robust optimization** | Yes (differentiable MC) | No | No | No | No | No |
-| **Lossy materials (RCWA)** | Yes (complex permittivity via eig) | — | — | — | — | — |
-| **License** | Apache 2.0 | LGPL (solver proprietary) | GPL | MIT | Open source | MIT |
-| **Status** | v0.6, experimental | Production | Production | Research | Research | Unmaintained |
+| Feature | DiffNano | Tidy3D v2.10.1 | MEEP v1.32.0 | TorchRDIT | FDTDX (2026) | Ceviche (archived) | meent (2024) |
+|:--------|:---------|:---------------|:-------------|:----------|:-------------|:-------------------|:-------------|
+| **RCWA** | Yes (eig + matrix_exp backends, lossy + lossless) | No | No | No (R-DIT) | No | No | Yes (multi-backend) |
+| **FDTD** | 2D + 3D | 3D | 3D | No | 3D | 2D | No |
+| **FDFD** | Yes | No | No | No | No | Yes | No |
+| **Neural Surrogate** | Yes (CNN) | No | No | No | No | No | No |
+| **GPU** | PyTorch CUDA/MPS | Cloud GPU (proprietary) | No (CPU, OpenMP) | PyTorch CUDA | JAX/XLA | No (NumPy) | JAX / PyTorch / NumPy |
+| **Autograd** | PyTorch native | Adjoint (JAX) | Adjoint wrapper | PyTorch native | JAX native | HIPS autograd | JAX / PyTorch / NumPy |
+| **Fabrication-aware** | Yes (Hopkins litho) | No | No | No | No | No | No |
+| **Robust optimization** | Yes (differentiable MC) | No | No | No | No | No | No |
+| **Lossy materials (RCWA)** | Yes (complex permittivity, eig + matrix_exp) | — | — | — | — | — | Yes |
+| **License** | Apache 2.0 | LGPL (solver proprietary) | GPL | MIT | Open source | MIT | MIT |
+| **Status** | v0.6, experimental | Production | Production | Research | Research | Unmaintained | Active |
 
 > **Where DiffNano lags:** DiffNano's FDTD does not match MEEP or Tidy3D in feature completeness (PML variants, dispersive materials, subpixel smoothing). Tidy3D and FDTDX likely outperform DiffNano's FDTD in raw simulation speed for 3D problems due to optimized C++/CUDA cores. DiffNano's strength is in its **solver diversity under a single differentiable framework** and **fabrication-aware optimization**, not raw solver performance.
 
