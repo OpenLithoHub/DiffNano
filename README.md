@@ -12,6 +12,11 @@ Gradient-based inverse design of nanophotonic devices with differentiable electr
 
 > **Note:** DiffNano is an early-stage personal research project. It is not production-validated and has no external users yet. The Roadmap reflects the author's learning trajectory, not shipped software.
 
+**Honesty boundaries:**
+- CPU-only; no GPU benchmarks have been conducted.
+- No third-party experimental validation. All results are self-measured on a single workstation.
+- Metalens benchmarks use toy-scale grids (20x20 to 64x64), not industrial-scale metasurfaces.
+
 </div>
 
 ---
@@ -32,6 +37,8 @@ Differentiable electromagnetic simulation is an active field with strong existin
 | [meent](https://github.com/tigh-ff/meent) | RCWA | Yes (JAX / PyTorch / NumPy) | Multi-backend RCWA, 2024, flexible autodiff |
 | [TorchRDIT](https://github.com/tigh-ff/TorchRDIT) | R-DIT | Yes (PyTorch) | Eigendecomposition-free via Taylor-expanded matrix exp, 2024 |
 | Matrix sqrt RCWA | RCWA (matrix exp) | Analytical | Delft + ASML, PIER C vol.163, 2026 |
+| GAOT | Geometry-aware operator transformer | Yes | NeurIPS 2025, arXiv:2505.18781 — geometry-aware neural operator |
+| GINOT | SDF-trunk geometry-informed operator | Yes | CMAME 2025 — SDF-based geometry representation for neural operators |
 
 DiffNano was built to learn how these solvers work by reimplementing them from scratch in PyTorch. It is not faster, more accurate, or more capable than the tools above.
 
@@ -192,19 +199,21 @@ python scripts/flagship_metalens_dfm.py
 
 The unified autograd graph propagates lithography printability gradients back into the EM design, achieving lower optical loss and better EPE than sequential decoupled optimization (see C4 benchmark).
 
+**Flagship evidence status:** `flagship_metalens_results.json` — 10/10 seeds valid, no NaN. RCWA matrix_exp backend (L1 fix) did not affect flagship results; NaN issue was specific to DiffCFD spin-coating.
+
 ---
 
 ## Performance & Benchmarks
 
 ### 1. Academic Paper Comparison (Table 1)
 
-| Metric | DiffNano (this work) | TorchRDIT (Huang et al., 2024)¹ | Meent (Kim et al., 2024)² | Benchmarking Study (Mansson et al., 2025)³ | Matrix sqrt RCWA (Delft/ASML, 2026)⁴ |
-|:-------|:---------------------|:--------------------------------|:--------------------------|:--------------------------------------------|:--------------------------------------|
-| **Core method** | RCWA (eig + matrix_exp) + FDFD + FDTD + Neural Surrogate | R-DIT (eigendecomposition-free) | RCWA (multi-backend) | 9 algorithms on RCWA backend | Matrix square root via exp(P^(1/2)) |
-| **Speedup claim** | 10–50x via CNN surrogate (inference only) | Up to 16.2x vs standard RCWA | N/A (framework paper) | Varies by algorithm | Numerically more stable backward vs eig |
-| **Robust optimization** | Differentiable MC, +31% yield (C5) | No | No | No (nominal only) | No |
-| **Fabrication-aware** | Hopkins lithography model in autograd | No | No | No | No |
-| **GPU backend** | PyTorch CUDA/MPS | PyTorch CUDA | JAX / PyTorch / NumPy | CPU (RCWA) | Not specified |
+| Metric | DiffNano (this work) | TorchRDIT (Huang et al., 2024)¹ | Meent (Kim et al., 2024)² | Benchmarking Study (Mansson et al., 2025)³ | Matrix sqrt RCWA (Delft/ASML, 2026)⁴ | GAOT (NeurIPS 2025)⁵ | GINOT (CMAME 2025)⁶ |
+|:-------|:---------------------|:--------------------------------|:--------------------------|:--------------------------------------------|:--------------------------------------|:---------------------|:---------------------|
+| **Core method** | RCWA (eig + matrix_exp) + FDFD + FDTD + Neural Surrogate | R-DIT (eigendecomposition-free) | RCWA (multi-backend) | 9 algorithms on RCWA backend | Matrix square root via exp(P^(1/2)) | Geometry-aware operator transformer | SDF-trunk geometry-informed operator |
+| **Speedup claim** | 10–50x via CNN surrogate (inference only) | Up to 16.2x vs standard RCWA | N/A (framework paper) | Varies by algorithm | Numerically more stable backward vs eig | N/A (surrogate, not solver) | N/A (surrogate, not solver) |
+| **Robust optimization** | Differentiable MC, +31% yield (C5) | No | No | No (nominal only) | No | No | No |
+| **Fabrication-aware** | Hopkins lithography model in autograd | No | No | No | No | No | No |
+| **GPU backend** | PyTorch CUDA/MPS | PyTorch CUDA | JAX / PyTorch / NumPy | CPU (RCWA) | Not specified | PyTorch | PyTorch |
 
 > **Comparability note:** TorchRDIT's 16.2x speedup is measured on eigendecomposition elimination (single-wavelength, periodic structures). DiffNano's 10–50x surrogate speedup covers the full RCWA forward pass but is inference-only and problem-specific. These numbers are **not directly comparable** — different hardware, problem sizes, and measurement methodology. DiffNano's matrix_exp backend uses `torch.linalg.matrix_exp` for propagation (inspired by the Delft/ASML approach), keeping `eig` for the matrix square root of P; the benefit is more stable backward gradients rather than forward speedup.
 
@@ -214,6 +223,8 @@ The unified autograd graph propagates lithography printability gradients back in
 2. Kim et al., "Meent: Differentiable Electromagnetic Simulation," arXiv:2406.12904, 2024. [arXiv](https://arxiv.org/abs/2406.12904)
 3. Mansson et al., "Benchmarking Optimization Methods for Nanophotonics," *Advanced Optical Materials*, 2025. [DOI:10.1002/adom.202500195](https://advanced.onlinelibrary.wiley.com/doi/10.1002/adom.202500195)
 4. Matrix Square Root Based Differentiable RCWA, *PIER C*, vol. 163, 2026 (Delft University of Technology + ASML)
+5. GAOT: Geometry-Aware Operator Transformer for surrogate modeling. NeurIPS 2025, arXiv:2505.18781.
+6. GINOT: SDF-trunk geometry-informed neural operator. *Computer Methods in Applied Mechanics and Engineering* (CMAME), 2025.
 
 ### 2. Open-Source Tool Comparison (Table 2)
 
