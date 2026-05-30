@@ -5,7 +5,7 @@
 **Differentiable Nanophotonics Design in PyTorch**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c.svg)](https://pytorch.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.12%2B-ee4c2c.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 Gradient-based inverse design of nanophotonic devices with differentiable electromagnetic solvers built in PyTorch.
@@ -85,7 +85,7 @@ All solvers are **PyTorch-native** — run on CPU/GPU/MPS, integrate with Adam, 
 ### Installation
 
 ```bash
-# From source (requires Python 3.10+, PyTorch 2.0+)
+# From source (requires Python 3.10+, PyTorch 2.12+)
 pip install -e .
 ```
 
@@ -210,6 +210,31 @@ The unified autograd graph propagates lithography printability gradients back in
 
 **Flagship evidence status:** `flagship_metalens_results.json` — 10/10 seeds valid, no NaN. RCWA matrix_exp backend (L1 fix) did not affect flagship results; NaN issue was specific to DiffCFD spin-coating.
 
+### Flagship Evidence Status
+
+| Claim | Code | Tests | Data | Status |
+|:------|:-----|:------|:-----|:-------|
+| RCWA `matrix_sqrt` backend (Denman-Beavers, eig-free) | `diffnano/solvers/rcwa.py` (`_matrix_sqrt_denman_beavers`) | `tests/test_rcwa_backends.py` (degeneracy + thick-layer + 10-seed) | `flagship_metalens_results.json` | Verified |
+| RCWA `eig_expm` backend | `diffnano/solvers/rcwa.py` | `tests/test_rcwa_backends.py` (multi-seed gradient) | Internal | Verified |
+| RCWA `eig` backend | `diffnano/solvers/rcwa.py` | `tests/test_rcwa_backends.py` | Internal | Verified |
+| Lossy material RCWA (complex permittivity) | `diffnano/solvers/rcwa.py` | `tests/test_rcwa_lossy.py` | Internal | Verified |
+| DFM-aware metalens co-design (`DFMMetalensDesigner`) | `diffnano/workflows/dfm_metalens.py` | `tests/test_flagship_metalens.py` | `flagship_metalens_results.json` | Verified |
+| C5 Robust optimization (MC, +31% yield) | `diffnano/design/robustness/core.py` | `tests/test_robustness.py` | `benchmark_c5_results.json` | Verified |
+| C4 Unified vs decoupled optimization | `diffnano/workflows/dfm_metalens.py` | `tests/test_benchmark.py` | `benchmark_c4_results.json` | Verified |
+| C7 Adaptive optimization strategy | `diffnano/design/robustness/adaptive.py` | `tests/test_benchmark.py` | `benchmark_c7_results.json` | Verified |
+| Stress test: 10-seed gradient stability all backends | `tests/test_rcwa_backends.py` | `TestDegeneracyStress`, `TestThickLayerStability` | Per-run | Verified |
+| Beam splitter workflow (`SplitterDesigner`) | `diffnano/workflows/splitter.py` | No meaningful test | N/A | **Aspirational** — returns dummy efficiency proxy |
+
+### Compatibility
+
+| Dependency | Version |
+|:-----------|:--------|
+| Python | 3.10+ |
+| PyTorch | 2.12+ |
+| diff-surrogate | 0.2.0 |
+
+**Sister projects:** [DiffCFD](https://github.com/OpenLithoHub/DiffCFD) (differentiable CFD), [OpenLithoHub](https://github.com/OpenLithoHub/OpenLithoHub) (lithography benchmarking), [diff-surrogate](https://github.com/telleroutlook/diff-surrogate) (shared surrogate framework).
+
 ---
 
 ## Performance & Benchmarks
@@ -316,7 +341,7 @@ All benchmark data above was generated on the following environment:
 - OS: Ubuntu 22.04.5 LTS
 - Python: 3.10.12
 - PyTorch: 2.12.0+cpu
-- DiffNano: commit `29edb90` (current main)
+- DiffNano: `0.6.0` (current main)
 
 **Run the benchmarks:**
 

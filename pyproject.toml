@@ -22,15 +22,15 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
 ]
 dependencies = [
-    "torch>=2.0",
+    "torch>=2.12",
     "numpy>=1.24",
     "scipy>=1.10",
     "diff-surrogate @ git+https://github.com/telleroutlook/diff-surrogate.git",
 ]
 
 [project.optional-dependencies]
-cuda = ["torch>=2.0"]
-mps = ["torch>=2.0"]
+cuda = ["torch>=2.12"]
+mps = ["torch>=2.12"]
 export = ["gdstk>=0.9"]
 viz = ["matplotlib>=3.7"]
 lint = ["ruff>=0.4"]
