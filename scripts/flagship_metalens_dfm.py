@@ -207,7 +207,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Multi-seed flagship metalens DFM benchmark")
     parser.add_argument("--seeds", type=int, nargs="+", default=None,
                         help="Seeds to use (default: 42..51)")
+    parser.add_argument("--seed-sweep", type=int, default=None,
+                        help="Run N consecutive seeds starting from 42 (shorthand for --seeds 42 .. 42+N-1)")
     parser.add_argument("--device", type=str, default="cpu",
                         help="Torch device (default: cpu)")
     args = parser.parse_args()
-    run(seeds=args.seeds, device=args.device)
+
+    seeds = args.seeds
+    if args.seed_sweep is not None:
+        seeds = list(range(42, 42 + args.seed_sweep))
+    run(seeds=seeds, device=args.device)
