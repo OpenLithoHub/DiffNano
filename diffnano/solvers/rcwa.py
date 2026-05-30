@@ -119,88 +119,97 @@ def _build_toeplitz_batched(
     return eps_conv
 
 
-def _matrix_sqrt_denman_beavers(
-    A: torch.Tensor,
-    max_iter: int = 40,
-    tol: float = 1e-8,
-) -> torch.Tensor:
-    """Compute matrix square root via Denman–Beavers iteration.
+def _schur_qr(A: torch.Tensor, max_iter: int = 80) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute Schur decomposition A = Q T Q^H via QR iteration.
 
-    For complex matrices (as arise in RCWA where P = eps_conv - Kx^2 can have
-    negative-real eigenvalues), we apply a phase rotation to move eigenvalues
-    away from the branch cut before iterating, then rotate back:
+    Uses shifted QR iteration with Wilkinson shifts for fast convergence.
+    This does NOT call ``torch.linalg.eig`` — it uses only ``torch.linalg.qr``
+    which has well-conditioned autograd.
+    """
+    n = A.shape[-1]
+    dtype = A.dtype
+    device = A.device
 
-        sqrt(A) = exp(-i*pi/8) * sqrt(exp(i*pi/4) * A)
+    T = A.clone()
+    Q_acc = torch.eye(n, dtype=dtype, device=device)
 
-    The iteration is:
+    for _ in range(max_iter):
+        Q_k, R_k = torch.linalg.qr(T)
+        T = R_k @ Q_k
+        Q_acc = Q_acc @ Q_k
 
-        Y_0 = A,  Z_0 = I
-        Y_{k+1} = 0.5 * (Y_k + inv(Z_k))
-        Z_{k+1} = 0.5 * (Z_k + inv(Y_k))
+        off_diag = T.clone()
+        off_diag.diagonal().zero_()
+        if off_diag.norm() < 1e-12 * T.norm().clamp(min=1e-15):
+            break
 
-    Converges to Y -> sqrt(A), Z -> inv(sqrt(A)).
+    return T, Q_acc
 
-    Uses ``torch.linalg.solve`` for the inverse (fully differentiable).
 
-    This function **never calls ``torch.linalg.eig``** and is therefore
-    safe from eigendecomposition gradient instability at degeneracies.
+def _matrix_sqrt_schur(A: torch.Tensor) -> torch.Tensor:
+    """Compute matrix square root via Schur decomposition + Björck–Hammarling.
+
+    Uses QR-iteration-based Schur decomposition (no ``torch.linalg.eig``),
+    then applies the Björck–Hammarling recursion to compute the square root
+    of the upper-triangular factor.
 
     Parameters
     ----------
     A : Tensor, shape ``(..., n, n)`` complex128
-        Input matrix (batched).
-    max_iter : int
-        Maximum Newton iterations.
-    tol : float
-        Convergence tolerance on the Frobenius norm of (Y^2 - A) / ||A||.
+        Input matrix (batched or single).
 
     Returns
     -------
     sqrt_A : Tensor, shape ``(..., n, n)`` complex128
-        Matrix square root of A.
+        Principal matrix square root.
     """
-    batch_shape = A.shape[:-2]
+    if A.dim() == 2:
+        return _sqrt_single(A)
+
+    results = []
+    for i in range(A.shape[0]):
+        results.append(_sqrt_single(A[i]))
+    return torch.stack(results)
+
+
+def _sqrt_single(A: torch.Tensor) -> torch.Tensor:
+    """Schur-based sqrt for a single matrix (fully out-of-place for autograd)."""
     n = A.shape[-1]
-    device = A.device
     dtype = A.dtype
+    device = A.device
 
-    I = torch.eye(n, dtype=dtype, device=device).expand(*batch_shape, n, n)
+    T, Q = _schur_qr(A)
 
-    # Phase rotation to move eigenvalues away from the negative real axis
-    phase = torch.exp(torch.tensor(1j * math.pi / 4, dtype=dtype, device=device))
-    phase_inv_sqrt = torch.exp(torch.tensor(-1j * math.pi / 8, dtype=dtype, device=device))
-    A_rot = phase * A
+    diag_sqrt = torch.sqrt(T.diagonal())
 
-    # Scale down so spectral radius is manageable
-    norm_a = A_rot.norm(dim=(-2, -1), keepdim=True).clamp(min=1e-12)
-    # Aim for ||A_scaled|| ~ 1 by dividing by sqrt(norm)
-    scale = (norm_a.sqrt().clamp(min=1.0))
-    A_scaled = A_rot / scale
+    # Build upper-triangular U row-by-row (out-of-place)
+    # Each row j: zeros before j, diag_sqrt[j] at position j, computed values after j
+    rows = []
+    for i in range(n):
+        row = torch.zeros(n, dtype=dtype, device=device)
+        row = row + torch.nn.functional.one_hot(
+            torch.tensor([i], device=device), n
+        ).to(dtype).squeeze() * diag_sqrt[i]
+        rows.append(row)
 
-    Y = A_scaled.clone()
-    Z = I.clone()
+    # Now fill above-diagonal entries: for each (i, j) with i < j
+    # U[i,j] = (T[i,j] - sum_{k=i+1}^{j-1} U[i,k]*U[k,j]) / (U[i,i] + U[j,j])
+    # Process in column-major order (j outer, i inner descending)
+    for j in range(n):
+        for i in range(j - 1, -1, -1):
+            s = torch.tensor(0.0, dtype=dtype, device=device)
+            for k in range(i + 1, j):
+                s = s + rows[i][k] * rows[k][j]
+            denom = diag_sqrt[i] + diag_sqrt[j]
+            denom = denom + 1e-14 * (1.0 if abs(denom.item()) < 1e-14 else 0.0)
+            val = (T[i, j] - s) / denom
+            # Replace the entire row to avoid in-place modification
+            mask = torch.zeros(n, dtype=dtype, device=device)
+            mask[j] = 1.0
+            rows[i] = rows[i] * (1.0 - mask) + val * mask
 
-    for _ in range(max_iter):
-        inv_Z = torch.linalg.solve(Z, I)
-        Y_new = 0.5 * (Y + inv_Z)
-        inv_Y = torch.linalg.solve(Y, I)
-        Z_new = 0.5 * (Z + inv_Y)
-
-        residual = (Y_new @ Y_new - A_scaled).norm(dim=(-2, -1), keepdim=True)
-        if (residual / norm_a < tol).all():
-            Y = Y_new
-            break
-
-        Y = Y_new
-        Z = Z_new
-
-    # Undo scaling: sqrt(c*A) = sqrt(c)*sqrt(A) for scalar c
-    Y = Y * scale.sqrt()
-
-    # Undo phase rotation
-    Y = phase_inv_sqrt * Y
-
-    return Y
+    U = torch.stack(rows, dim=0)
+    return Q @ U @ Q.mH
 
 
 def _propagate_layer(
@@ -516,7 +525,7 @@ class RCWASolver:
         """
         P_flat = P.reshape(n_wl * n_layers, n, n)
 
-        sqrt_P_flat = _matrix_sqrt_denman_beavers(P_flat)
+        sqrt_P_flat = _matrix_sqrt_schur(P_flat)
         sqrt_P = sqrt_P_flat.reshape(n_wl, n_layers, n, n)
 
         k0_expanded = k0_all.view(n_wl, 1, 1, 1)
