@@ -208,7 +208,7 @@ python scripts/flagship_metalens_dfm.py
 
 The unified autograd graph propagates lithography printability gradients back into the EM design, achieving lower optical loss and better EPE than sequential decoupled optimization (see C4 benchmark).
 
-**Flagship evidence status:** `flagship_metalens_results.json` — 10/10 seeds valid, no NaN. RCWA matrix_exp backend (L1 fix) did not affect flagship results; NaN issue was specific to DiffCFD spin-coating.
+**Flagship evidence status:** `flagship_metalens_results.json` — 10/10 seeds valid, no NaN. Re-swept with `matrix_sqrt` backend (Schur + Björck-Hammarling, eig-free). Coupled: optical_loss=0.637±0.088, litho_epe=2.234±0.215 vs Decoupled: optical_loss=1.757±0.844, litho_epe=3.942±1.196; Wilcoxon p=0.002.
 
 ### Flagship Evidence Status
 
