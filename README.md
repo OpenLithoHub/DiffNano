@@ -49,7 +49,7 @@ DiffNano was built to learn how these solvers work by reimplementing them from s
 | Solver | Type | Best For |
 |:-------|:-----|:---------|
 | **Differentiable FDTD** | 2D/3D time-domain with CPML | Broadband, transient, arbitrary geometries |
-| **Differentiable RCWA** | Fourier-domain, periodic structures (eig + matrix_exp backends) | Metasurfaces, gratings, metalenses |
+| **Differentiable RCWA** | Fourier-domain, periodic structures (matrix_sqrt + eig_expm + eig backends) | Metasurfaces, gratings, metalenses |
 | **Differentiable FDFD** | Frequency-domain, steady-state | CW problems, GPU-native dense solve |
 | **Neural Surrogate** | CNN-accelerated RCWA | 10-50x optimization speedup |
 | **Implicit Differentiation** | Matrix-free GMRES + adjoint | Memory-efficient FDFD gradients |
@@ -209,13 +209,13 @@ The unified autograd graph propagates lithography printability gradients back in
 
 | Metric | DiffNano (this work) | TorchRDIT (Huang et al., 2024)¹ | Meent (Kim et al., 2024)² | Benchmarking Study (Mansson et al., 2025)³ | Matrix sqrt RCWA (Delft/ASML, 2026)⁴ | GAOT (NeurIPS 2025)⁵ | GINOT (CMAME 2025)⁶ |
 |:-------|:---------------------|:--------------------------------|:--------------------------|:--------------------------------------------|:--------------------------------------|:---------------------|:---------------------|
-| **Core method** | RCWA (eig + matrix_exp) + FDFD + FDTD + Neural Surrogate | R-DIT (eigendecomposition-free) | RCWA (multi-backend) | 9 algorithms on RCWA backend | Matrix square root via exp(P^(1/2)) | Geometry-aware operator transformer | SDF-trunk geometry-informed operator |
+| **Core method** | RCWA (matrix_sqrt + eig_expm + eig) + FDFD + FDTD + Neural Surrogate | R-DIT (eigendecomposition-free) | RCWA (multi-backend) | 9 algorithms on RCWA backend | Matrix square root via exp(P^(1/2)) | Geometry-aware operator transformer | SDF-trunk geometry-informed operator |
 | **Speedup claim** | 10–50x via CNN surrogate (inference only) | Up to 16.2x vs standard RCWA | N/A (framework paper) | Varies by algorithm | Numerically more stable backward vs eig | N/A (surrogate, not solver) | N/A (surrogate, not solver) |
 | **Robust optimization** | Differentiable MC, +31% yield (C5) | No | No | No (nominal only) | No | No | No |
 | **Fabrication-aware** | Hopkins lithography model in autograd | No | No | No | No | No | No |
 | **GPU backend** | PyTorch CUDA/MPS | PyTorch CUDA | JAX / PyTorch / NumPy | CPU (RCWA) | Not specified | PyTorch | PyTorch |
 
-> **Comparability note:** TorchRDIT's 16.2x speedup is measured on eigendecomposition elimination (single-wavelength, periodic structures). DiffNano's 10–50x surrogate speedup covers the full RCWA forward pass but is inference-only and problem-specific. These numbers are **not directly comparable** — different hardware, problem sizes, and measurement methodology. DiffNano's matrix_exp backend uses `torch.linalg.matrix_exp` for propagation (inspired by the Delft/ASML approach), keeping `eig` for the matrix square root of P; the benefit is more stable backward gradients rather than forward speedup.
+> **Comparability note:** TorchRDIT's 16.2x speedup is measured on eigendecomposition elimination (single-wavelength, periodic structures). DiffNano's 10–50x surrogate speedup covers the full RCWA forward pass but is inference-only and problem-specific. These numbers are **not directly comparable** — different hardware, problem sizes, and measurement methodology. DiffNano's `matrix_sqrt` backend (default, N2 fix) implements the Delft/ASML matrix square root approach via Denman–Beavers iteration — truly eig-free with no `torch.linalg.eig` in the autograd graph. The older `eig_expm` backend remains for regression comparison.
 
 **References:**
 
