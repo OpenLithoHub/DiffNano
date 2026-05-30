@@ -26,7 +26,7 @@ __all__ = ["DFMMetalensDesigner"]
 
 
 class DFMMetalensDesigner:
-    """DFM-native metalens inverse design (C4 embodiment).
+    """DFM-native metalens inverse design (C4 embodiment).  :stable:
 
     Uses a density field parameterization θ ∈ [0,1]^{H×W} that is shared
     between the lithography forward model and the EM forward model.
@@ -149,7 +149,7 @@ class DFMMetalensDesigner:
         lambda_fab: float = 0.01,
         beta: float = 10.0,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Compute the unified autograd graph loss (C4 mechanism).
+        """Compute the unified autograd graph loss (C4 mechanism).  :stable:
 
         Parameters
         ----------
@@ -192,7 +192,7 @@ class DFMMetalensDesigner:
         n_mc_samples: int = 8,
         verbose: bool = True,
     ) -> tuple[torch.Tensor, list[float], list[dict]]:
-        """Run the DFM-metalens optimization loop."""
+        """Run the DFM-metalens optimization loop.  :stable:"""
         density = torch.rand(*self.grid_shape, device=self.device, dtype=torch.float64)
         density = density.detach().requires_grad_(True)
 
@@ -279,7 +279,7 @@ class DFMMetalensDesigner:
         lambda_fab: float = 0.01,
         verbose: bool = True,
     ) -> tuple[torch.Tensor, list[float]]:
-        """Decoupled baseline: optical-only optimization, then litho check."""
+        """Decoupled baseline: optical-only optimization, then litho check.  :stable:"""
         density = torch.rand(*self.grid_shape, device=self.device, dtype=torch.float64)
         density = density.detach().requires_grad_(True)
 

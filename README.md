@@ -114,6 +114,27 @@ pip install -e ".[dev]"
 
 ---
 
+## Co-Design: Metalens + Lithography
+
+DiffNano couples EM and lithography solvers through a shared design parameterization using the diff-surrogate co-design API:
+
+```python
+from diff_surrogate import CoDesignWorkflow, CoupledLoss
+from diffnano.workflows import DFMMetalensDesigner
+
+# Or use the pre-built DFM workflow directly:
+designer = DFMMetalensDesigner(wavelength_nm=940, pixel_size_nm=5)
+density, history, breakdown = designer.optimize(n_steps=500)
+# breakdown tracks optical + litho + fabrication losses in one autograd graph
+
+# Compare against decoupled baseline:
+density_base, base_history = designer.decoupled_baseline(n_steps=500)
+```
+
+The unified autograd graph propagates lithography printability gradients back into the EM design, achieving lower optical loss and better EPE than sequential decoupled optimization (see C4 benchmark).
+
+---
+
 ## Performance & Benchmarks
 
 ### 1. Academic Paper Comparison (Table 1)
