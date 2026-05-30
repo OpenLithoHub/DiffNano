@@ -6,9 +6,8 @@ Provides:
 - Curriculum: start axial (cheap), add random samples as optimization converges
 - Fabricable subspace projection: discretize continuous density to fabricable geometry
 
-Optionally integrates with ``diff_surrogate.adaptive_corner.AdaptiveMultiCornerEvaluator``
-when the ``diff-surrogate`` package is installed, providing uncertainty-based corner
-weighting and adaptive corner skipping.
+Integrates with ``diff_surrogate.adaptive_corner.AdaptiveMultiCornerEvaluator``
+for uncertainty-based corner weighting and adaptive corner skipping.
 
 References
 ----------
@@ -22,16 +21,8 @@ from typing import Any
 
 import torch
 
-# Optional import from diff-surrogate for uncertainty-based multi-corner evaluation
-try:
-    from diff_surrogate.adaptive_corner import AdaptiveMultiCornerEvaluator as _DSAdaptiveEvaluator
-    from diff_surrogate.robust_design import CornerSpec as _DSCornerSpec
-
-    _HAS_DIFF_SURROGATE = True
-except ImportError:
-    _DSAdaptiveEvaluator = None  # type: ignore[assignment, misc]
-    _DSCornerSpec = None  # type: ignore[assignment, misc]
-    _HAS_DIFF_SURROGATE = False
+from diff_surrogate.adaptive_corner import AdaptiveMultiCornerEvaluator as _DSAdaptiveEvaluator
+from diff_surrogate.robust_design import CornerSpec as _DSCornerSpec
 
 __all__ = [
     "AdaptiveRobustOptimizer",
@@ -249,13 +240,12 @@ class AdaptiveRobustOptimizer:
         self.refinement_top_k = refinement_top_k
         self._device = torch.device(device)
 
-        # Optional diff-surrogate AdaptiveMultiCornerEvaluator integration
         self._corner_evaluator = corner_evaluator
-        if corner_evaluator is not None and _HAS_DIFF_SURROGATE:
+        if corner_evaluator is not None:
             if not isinstance(corner_evaluator, _DSAdaptiveEvaluator):
                 raise TypeError(
                     "corner_evaluator must be an AdaptiveMultiCornerEvaluator "
-                    "from diff_surrogate when diff-surrogate is installed"
+                    "from diff_surrogate"
                 )
 
         if cov_matrix is not None:
@@ -361,10 +351,9 @@ class AdaptiveRobustOptimizer:
         loss : Tensor
         info : dict
         """
-        if self._corner_evaluator is not None and _HAS_DIFF_SURROGATE:
+        if self._corner_evaluator is not None:
             return self._corner_evaluator.evaluate(params, forward_fn, loss_fn)
 
-        # Fallback: simple single-corner loss
         output = forward_fn(params)
         return loss_fn(output), {"per_corner_loss": [loss_fn(output).item()],
                                   "weights": [1.0], "uncertainties": [0.0],

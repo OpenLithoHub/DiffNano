@@ -12,26 +12,8 @@ from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
-try:
-    from diff_surrogate import CorrectionPolicy
-    from diff_surrogate.base import SurrogateStats
-except ImportError:
-
-    class CorrectionPolicy:
-        """Stub when diff_surrogate is not installed."""
-
-        def __init__(self, correction_interval=10):
-            self.correction_interval = correction_interval
-
-        def should_correct(self, count):
-            return count % self.correction_interval == 0
-
-    class SurrogateStats:
-        """Stub when diff_surrogate is not installed."""
-
-        def __init__(self):
-            self.total_predictions = 0
-            self.total_corrections = 0
+from diff_surrogate import CorrectionPolicy
+from diff_surrogate.base import SurrogateStats
 
 from diffnano.solvers._result import SimResult
 
