@@ -6,12 +6,15 @@ Verifies that:
    gradient explosion, where the eig backend degrades.
 2. All three backends agree on forward output for well-conditioned inputs.
 3. Thick layers produce stable numerical results across backends.
+4. Gain-layer (negative imaginary eps) is clamped without NaN/Inf.
+5. Denman-Beavers matrix sqrt agrees with Schur-based sqrt.
+6. Gradient consistency between matrix_sqrt and eig backends after clamping.
 """
 
 import pytest
 import torch
 
-from diffnano.solvers.rcwa import RCWASolver
+from diffnano.solvers.rcwa import RCWASolver, _matrix_sqrt_denman_beavers, _matrix_sqrt_schur
 
 
 def _symmetric_grating(n_layers: int, n_grid: int, eps_high: float = 4.0) -> torch.Tensor:
@@ -180,3 +183,69 @@ class TestThickLayerStability:
         assert torch.isfinite(result.field).all(), (
             f"NaN in forward for thick layer with backend={backend}"
         )
+
+
+def test_gain_layer_protection():
+    """Adversarial test: negative imaginary eps is clamped, no NaN."""
+    solver = RCWASolver(fourier_orders=5, solver_backend="matrix_sqrt")
+    n_grid = 21
+    eps_real = torch.ones(n_grid) * 4.0
+    eps_imag = torch.ones(n_grid) * (-0.5)
+    geometry = torch.complex(eps_real, eps_imag).unsqueeze(0)
+
+    result = solver.forward(geometry)
+    assert not torch.isnan(result.field).any(), "NaN in output with gain-layer eps"
+    assert not torch.isinf(result.field).any(), "Inf in output with gain-layer eps"
+
+
+def test_matrix_sqrt_denman_beavers_matches_schur():
+    """Denman-Beavers iteration agrees with Schur-based sqrt."""
+    torch.manual_seed(42)
+    n = 7
+    A = torch.randn(n, n, dtype=torch.complex128)
+    A = A @ A.conj().T + 2 * torch.eye(n, dtype=torch.complex128)
+
+    sqrt_db = _matrix_sqrt_denman_beavers(A)
+    sqrt_schur = _matrix_sqrt_schur(A)
+
+    assert torch.allclose(sqrt_db @ sqrt_db, A, atol=1e-8), "Denman-Beavers sqrt^2 != A"
+    assert torch.allclose(sqrt_schur @ sqrt_schur, A, atol=1e-8), "Schur sqrt^2 != A"
+    assert torch.allclose(sqrt_db, sqrt_schur, atol=1e-6), "DB and Schur sqrt disagree"
+
+
+def test_gain_layer_gradient_consistency():
+    """After clamping, gradient direction cosine > 0.99 vs eig baseline.
+
+    Uses a symmetric cosine grating profile with slight gain (negative
+    imaginary eps) to verify that both backends agree on gradient direction
+    after the clamping safeguard normalizes the input.
+    """
+    torch.manual_seed(42)
+    solver_sqrt = RCWASolver(fourier_orders=3, solver_backend="matrix_sqrt")
+    solver_eig = RCWASolver(fourier_orders=3, solver_backend="eig")
+
+    eps_real = _symmetric_grating(1, 100, eps_high=4.0).squeeze(0)
+    eps_imag = torch.full_like(eps_real, -0.1)
+    geometry = torch.complex(eps_real, eps_imag).unsqueeze(0).requires_grad_(True)
+
+    # matrix_sqrt path
+    geo_sqrt = geometry.detach().clone().requires_grad_(True)
+    result_sqrt = solver_sqrt.forward(geo_sqrt)
+    loss_sqrt = result_sqrt.field[:, solver_sqrt.fourier_orders].sum()
+    loss_sqrt.backward()
+    grad_sqrt = geo_sqrt.grad.clone()
+
+    # eig path
+    geo_eig = geometry.detach().clone().requires_grad_(True)
+    result_eig = solver_eig.forward(geo_eig)
+    loss_eig = result_eig.field[:, solver_eig.fourier_orders].sum()
+    loss_eig.backward()
+    grad_eig = geo_eig.grad.clone()
+
+    # Gradient flows through real part; compare real component direction
+    flat_sqrt = grad_sqrt.real.flatten().to(torch.float64)
+    flat_eig = grad_eig.real.flatten().to(torch.float64)
+    cos_sim = torch.nn.functional.cosine_similarity(
+        flat_sqrt.unsqueeze(0), flat_eig.unsqueeze(0)
+    ).item()
+    assert cos_sim > 0.99, f"Gradient direction cosine {cos_sim:.4f} < 0.99"

@@ -36,6 +36,7 @@ References
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Sequence
 
@@ -44,6 +45,8 @@ import torch
 from diffnano.solvers._result import SimResult
 
 __all__ = ["RCWASolver"]
+
+_logger = logging.getLogger(__name__)
 
 
 def _build_toeplitz_1d(
@@ -212,6 +215,84 @@ def _sqrt_single(A: torch.Tensor) -> torch.Tensor:
     return Q @ U @ Q.mH
 
 
+def _matrix_sqrt_denman_beavers(
+    A: torch.Tensor,
+    max_iter: int = 30,
+    tol: float = 1e-12,
+) -> torch.Tensor:
+    """Matrix square root via Denman-Beavers (Newton-Schulz) iteration.
+
+    Computes the principal square root of a matrix with positive real
+    eigenvalues using the coupled iteration:
+
+        Y_0 = A,  Z_0 = I
+        Y_{k+1} = 0.5 * Y_k * (3I - Z_k * Y_k)
+        Z_{k+1} = 0.5 * (3I - Z_k * Y_k) * Z_k
+
+    Y converges to sqrt(A) and Z converges to inv(sqrt(A)).
+
+    Parameters
+    ----------
+    A : Tensor, shape ``(n, n)`` or ``(batch, n, n)``, complex128
+        Input matrix (batched or single).
+    max_iter : int
+        Maximum number of iterations.
+    tol : float
+        Convergence tolerance on the relative change in Y.
+
+    Returns
+    -------
+    sqrt_A : Tensor, same shape as *A*, complex128
+        Principal matrix square root.
+    """
+    if A.dim() == 2:
+        return _db_iteration_single(A, max_iter, tol)
+    elif A.dim() == 3:
+        results = [_db_iteration_single(A[i], max_iter, tol) for i in range(A.shape[0])]
+        return torch.stack(results)
+    else:
+        raise ValueError(f"Expected 2D or 3D tensor, got {A.dim()}D")
+
+
+def _db_iteration_single(
+    A: torch.Tensor,
+    max_iter: int,
+    tol: float,
+) -> torch.Tensor:
+    """Denman-Beavers iteration for a single matrix.
+
+    Uses norm scaling to ensure convergence: the input is scaled by
+    ``1/||A||_F`` so that the spectral radius is near 1, and the result
+    is unscaled at the end via ``sqrt(||A||_F) * Y``.
+    """
+    n = A.shape[-1]
+    dtype = A.dtype
+    device = A.device
+
+    # Scale A so that convergence is guaranteed
+    norm_A = A.norm()
+    scale = norm_A.clamp(min=1e-15)
+    Y = A / scale
+    Z = torch.eye(n, dtype=dtype, device=device)
+    I3 = 3.0 * torch.eye(n, dtype=dtype, device=device)
+
+    for _ in range(max_iter):
+        ZY = Z @ Y
+        correction = I3 - ZY
+        Y_new = 0.5 * Y @ correction
+        Z_new = 0.5 * correction @ Z
+
+        rel_change = (Y_new - Y).norm() / Y.norm().clamp(min=1e-15)
+        Y = Y_new
+        Z = Z_new
+
+        if rel_change < tol:
+            break
+
+    # Undo the scaling: if Y -> sqrt(A/scale), then sqrt(scale)*Y -> sqrt(A)
+    return Y * torch.sqrt(scale)
+
+
 def _propagate_layer(
     eps_conv: torch.Tensor,
     kx_norm: torch.Tensor,
@@ -291,6 +372,9 @@ class RCWASolver:
         Compute device.
     degen_tol : float
         Degeneracy tolerance for eigendecomposition backward.
+    eps_imag_floor : float
+        Minimum allowed value for ``eps.imag`` after clamping (default 0.0).
+        Values below this floor indicate unphysical gain media.
     solver_backend : str
         Propagation method: ``"matrix_sqrt"`` (default, truly eig-free),
         ``"eig_expm"`` (eig + matrix_exp), or ``"eig"`` (legacy baseline).
@@ -305,6 +389,7 @@ class RCWASolver:
         eps_substrate: float = 1.0,
         device: str | torch.device = "cpu",
         degen_tol: float = 1e-6,
+        eps_imag_floor: float = 0.0,
         solver_backend: str = "matrix_sqrt",
     ):
         self.fourier_orders = fourier_orders
@@ -315,6 +400,8 @@ class RCWASolver:
         self.eps_substrate = eps_substrate
         self.device = torch.device(device)
         self.degen_tol = degen_tol
+        self.eps_imag_floor = eps_imag_floor
+        self._last_clamp_fraction: float = 0.0
         if solver_backend not in ("eig", "eig_expm", "matrix_sqrt"):
             raise ValueError(
                 f"solver_backend must be 'matrix_sqrt', 'eig_expm', or 'eig', "
@@ -371,15 +458,31 @@ class RCWASolver:
             raise ValueError(f"geometry must be 2D or 3D tensor, got {geometry.dim()}D")
 
     def _clamp_eps_imag(self, eps: torch.Tensor) -> torch.Tensor:
-        """Ensure non-negative imaginary part of permittivity.
+        """Clamp imaginary part of permittivity to ``eps_imag_floor``.
 
         Negative imaginary permittivity corresponds to gain, which is unphysical
-        for passive structures.  This clamp enforces ``eps.imag >= 0``.
+        for passive structures.  When clamping occurs, a warning is logged and
+        the clamped fraction is stored in ``_last_clamp_fraction`` for diagnostics.
         """
         if eps.is_complex():
+            with torch.no_grad():
+                below_floor = eps.imag < self.eps_imag_floor
+                n_clamped = below_floor.sum().item()
+                n_total = below_floor.numel()
+                fraction = n_clamped / n_total if n_total > 0 else 0.0
+                self._last_clamp_fraction = fraction
+            if n_clamped > 0:
+                _logger.warning(
+                    "Clamped %.2f%% of eps.imag elements (%d/%d) to floor %.2g",
+                    fraction * 100,
+                    n_clamped,
+                    n_total,
+                    self.eps_imag_floor,
+                )
             real = eps.real
-            imag = torch.clamp(eps.imag, min=0.0)
+            imag = torch.clamp(eps.imag, min=self.eps_imag_floor)
             return torch.complex(real, imag)
+        self._last_clamp_fraction = 0.0
         return eps
 
     def _forward_1d(
@@ -524,6 +627,23 @@ class RCWASolver:
         matrix is formed via ``matrix_exp``.
         """
         P_flat = P.reshape(n_wl * n_layers, n, n)
+
+        # Near-singular diagnostic: check smallest singular value of each
+        # P sub-matrix before computing the matrix square root.
+        with torch.no_grad():
+            svd_vals = torch.linalg.svdvals(P_flat)  # (n_wl*n_layers, n)
+            min_sv = svd_vals.min(dim=-1).values  # (n_wl*n_layers,)
+            near_singular_mask = min_sv < self.degen_tol
+            if near_singular_mask.any():
+                idx = near_singular_mask.nonzero(as_tuple=False)[0, 0].item()
+                wl_idx = idx // n_layers
+                lay_idx = idx % n_layers
+                raise RuntimeError(
+                    f"P matrix is near-singular: min singular value "
+                    f"{min_sv[idx]:.4e} < degen_tol {self.degen_tol:.4e} "
+                    f"(wavelength index {wl_idx}, layer index {lay_idx}). "
+                    f"Consider reducing layer thickness or increasing degen_tol."
+                )
 
         sqrt_P_flat = _matrix_sqrt_schur(P_flat)
         sqrt_P = sqrt_P_flat.reshape(n_wl, n_layers, n, n)
