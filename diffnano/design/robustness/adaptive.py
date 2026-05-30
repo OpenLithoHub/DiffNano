@@ -20,9 +20,7 @@ from collections.abc import Callable
 from typing import Any
 
 import torch
-
 from diff_surrogate.adaptive_corner import AdaptiveMultiCornerEvaluator as _DSAdaptiveEvaluator
-from diff_surrogate.robust_design import CornerSpec as _DSCornerSpec
 
 __all__ = [
     "AdaptiveRobustOptimizer",
@@ -244,8 +242,7 @@ class AdaptiveRobustOptimizer:
         if corner_evaluator is not None:
             if not isinstance(corner_evaluator, _DSAdaptiveEvaluator):
                 raise TypeError(
-                    "corner_evaluator must be an AdaptiveMultiCornerEvaluator "
-                    "from diff_surrogate"
+                    "corner_evaluator must be an AdaptiveMultiCornerEvaluator from diff_surrogate"
                 )
 
         if cov_matrix is not None:
@@ -355,9 +352,12 @@ class AdaptiveRobustOptimizer:
             return self._corner_evaluator.evaluate(params, forward_fn, loss_fn)
 
         output = forward_fn(params)
-        return loss_fn(output), {"per_corner_loss": [loss_fn(output).item()],
-                                  "weights": [1.0], "uncertainties": [0.0],
-                                  "skipped": []}
+        return loss_fn(output), {
+            "per_corner_loss": [loss_fn(output).item()],
+            "weights": [1.0],
+            "uncertainties": [0.0],
+            "skipped": [],
+        }
 
     def optimize(
         self,

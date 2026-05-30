@@ -75,7 +75,7 @@ def _build_toeplitz_batched(
     -------
     eps_conv : Tensor, shape ``(n_layers, n_fourier, n_fourier)``, complex128
     """
-    n_layers = eps_layers.shape[0]
+    _n_layers = eps_layers.shape[0]
     N = eps_layers.shape[1]
     device = eps_layers.device
     if n_fourier > N:

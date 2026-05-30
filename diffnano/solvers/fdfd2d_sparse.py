@@ -226,7 +226,7 @@ class _SparseHelmholtzSolve(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_x: torch.Tensor):
-        eps_r, = ctx.saved_tensors
+        (eps_r,) = ctx.saved_tensors
         device = ctx.device
         H, W = ctx.grid_shape
         omega = ctx.omega
@@ -377,8 +377,13 @@ class SparseFDFDSolver2D:
         # Sparse solve with adjoint backward
         omega = self.omega_norm
         x = _SparseHelmholtzSolve.apply(
-            eps_r, b, omega, self.dl, self._pml_params(),
-            self.polarization, self.grid_shape,
+            eps_r,
+            b,
+            omega,
+            self.dl,
+            self._pml_params(),
+            self.polarization,
+            self.grid_shape,
         )
 
         field = x.unsqueeze(0)

@@ -125,8 +125,11 @@ class CurvilinearMask:
         soft-min distance and differentiable winding number.
         """
         return sdf_from_curve(
-            self.grid_x, self.grid_y, curve_points,
-            softmin_temp=10.0, winding_sharpness=20.0,
+            self.grid_x,
+            self.grid_y,
+            curve_points,
+            softmin_temp=10.0,
+            winding_sharpness=20.0,
         )
 
     def forward(

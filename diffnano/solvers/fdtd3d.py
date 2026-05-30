@@ -162,9 +162,12 @@ class FDTDSolver3D:
         """Return cached CPML damping coefficients for x, y, z boundaries."""
         self._ensure_cpml_on_device()
         return (
-            self._cached_bx, self._cached_cx,
-            self._cached_by, self._cached_cy,
-            self._cached_bz, self._cached_cz,
+            self._cached_bx,
+            self._cached_cx,
+            self._cached_by,
+            self._cached_cy,
+            self._cached_bz,
+            self._cached_cz,
         )
 
     # ------------------------------------------------------------------
@@ -344,7 +347,14 @@ class FDTDSolver3D:
 
         for step in range(n_steps):
             Ex, Ey, Ez, Hx, Hy, Hz = self._time_step(
-                Ex, Ey, Ez, Hx, Hy, Hz, eps_r, mu_r,
+                Ex,
+                Ey,
+                Ez,
+                Hx,
+                Hy,
+                Hz,
+                eps_r,
+                mu_r,
             )
             waveform = self._source_waveform(step, source)
             Ez = Ez + source_mask * waveform
@@ -364,7 +374,14 @@ class FDTDSolver3D:
         def _segment(Ex, Ey, Ez, Hx, Hy, Hz, eps, mu, start, steps):
             for step in range(start, start + steps):
                 Ex, Ey, Ez, Hx, Hy, Hz = self._time_step(
-                    Ex, Ey, Ez, Hx, Hy, Hz, eps, mu,
+                    Ex,
+                    Ey,
+                    Ez,
+                    Hx,
+                    Hy,
+                    Hz,
+                    eps,
+                    mu,
                 )
                 waveform = self._source_waveform(step, source)
                 Ez = Ez + source_mask * waveform
@@ -386,9 +403,16 @@ class FDTDSolver3D:
             steps_this = min(seg_len, n_steps - step_idx)
             Ex, Ey, Ez, Hx, Hy, Hz = cp.checkpoint(
                 _segment,
-                Ex, Ey, Ez, Hx, Hy, Hz,
-                eps_r, mu_r,
-                step_idx, steps_this,
+                Ex,
+                Ey,
+                Ez,
+                Hx,
+                Hy,
+                Hz,
+                eps_r,
+                mu_r,
+                step_idx,
+                steps_this,
                 use_reentrant=False,
             )
             step_idx += steps_this
@@ -492,7 +516,14 @@ class FDTDSolver3D:
 
         for step in range(steps):
             Ex, Ey, Ez, Hx, Hy, Hz = self._time_step(
-                Ex, Ey, Ez, Hx, Hy, Hz, eps_r, mu_r,
+                Ex,
+                Ey,
+                Ez,
+                Hx,
+                Hy,
+                Hz,
+                eps_r,
+                mu_r,
             )
             waveform = self._source_waveform(step, src)
             Ez = Ez + source_mask * waveform

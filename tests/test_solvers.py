@@ -232,7 +232,13 @@ class TestSparseFDFDSolver2D:
         from diffnano.solvers.fdfd2d_sparse import SparseFDFDSolver2D
 
         grid = (10, 10)
-        kwargs = dict(grid_shape=grid, dl=20.0, wavelength_nm=1550.0, polarization="TM", pml_layers=2)
+        kwargs = dict(
+            grid_shape=grid,
+            dl=20.0,
+            wavelength_nm=1550.0,
+            polarization="TM",
+            pml_layers=2,
+        )
 
         dense = FDFDSolver2D(**kwargs)
         sparse = SparseFDFDSolver2D(**kwargs)
