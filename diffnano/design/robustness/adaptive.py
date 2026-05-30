@@ -6,6 +6,10 @@ Provides:
 - Curriculum: start axial (cheap), add random samples as optimization converges
 - Fabricable subspace projection: discretize continuous density to fabricable geometry
 
+Optionally integrates with ``diff_surrogate.adaptive_corner.AdaptiveMultiCornerEvaluator``
+when the ``diff-surrogate`` package is installed, providing uncertainty-based corner
+weighting and adaptive corner skipping.
+
 References
 ----------
 - Ma et al. (2024), BOSON-1: arXiv:2411.08210 (adaptive sampling, fabricable subspace)
@@ -14,8 +18,20 @@ References
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import torch
+
+# Optional import from diff-surrogate for uncertainty-based multi-corner evaluation
+try:
+    from diff_surrogate.adaptive_corner import AdaptiveMultiCornerEvaluator as _DSAdaptiveEvaluator
+    from diff_surrogate.robust_design import CornerSpec as _DSCornerSpec
+
+    _HAS_DIFF_SURROGATE = True
+except ImportError:
+    _DSAdaptiveEvaluator = None  # type: ignore[assignment, misc]
+    _DSCornerSpec = None  # type: ignore[assignment, misc]
+    _HAS_DIFF_SURROGATE = False
 
 __all__ = [
     "AdaptiveRobustOptimizer",
@@ -225,12 +241,22 @@ class AdaptiveRobustOptimizer:
         n_random_budget: int = 16,
         refinement_top_k: int = 3,
         device: str | torch.device = "cpu",
+        corner_evaluator: Any | None = None,
     ):
         self.n_dims = n_variation_dims
         self.sigma = sigma
         self.n_random_budget = n_random_budget
         self.refinement_top_k = refinement_top_k
         self._device = torch.device(device)
+
+        # Optional diff-surrogate AdaptiveMultiCornerEvaluator integration
+        self._corner_evaluator = corner_evaluator
+        if corner_evaluator is not None and _HAS_DIFF_SURROGATE:
+            if not isinstance(corner_evaluator, _DSAdaptiveEvaluator):
+                raise TypeError(
+                    "corner_evaluator must be an AdaptiveMultiCornerEvaluator "
+                    "from diff_surrogate when diff-surrogate is installed"
+                )
 
         if cov_matrix is not None:
             self.cov_chol = torch.linalg.cholesky(cov_matrix)
@@ -306,6 +332,43 @@ class AdaptiveRobustOptimizer:
         worst_loss = loss_stack[sorted_indices[:top_k]].mean()
 
         return 0.7 * uniform_loss + 0.3 * worst_loss
+
+    def compute_robust_loss_with_corners(
+        self,
+        params: torch.Tensor,
+        forward_fn: Callable[[torch.Tensor], torch.Tensor],
+        loss_fn: Callable[[torch.Tensor], torch.Tensor],
+    ) -> tuple[torch.Tensor, dict]:
+        """Compute robust loss using diff-surrogate's AdaptiveMultiCornerEvaluator.
+
+        This is an alternative to :meth:`compute_robust_loss` that delegates
+        multi-corner evaluation to the optionally-provided corner evaluator
+        (from ``diff_surrogate``).  When no evaluator is configured or when
+        ``diff-surrogate`` is not installed, falls back to a simple
+        single-corner evaluation.
+
+        Parameters
+        ----------
+        params:
+            Design parameters.
+        forward_fn:
+            ``forward_fn(design) -> Tensor``.
+        loss_fn:
+            ``loss_fn(output) -> Tensor`` (scalar).
+
+        Returns
+        -------
+        loss : Tensor
+        info : dict
+        """
+        if self._corner_evaluator is not None and _HAS_DIFF_SURROGATE:
+            return self._corner_evaluator.evaluate(params, forward_fn, loss_fn)
+
+        # Fallback: simple single-corner loss
+        output = forward_fn(params)
+        return loss_fn(output), {"per_corner_loss": [loss_fn(output).item()],
+                                  "weights": [1.0], "uncertainties": [0.0],
+                                  "skipped": []}
 
     def optimize(
         self,

@@ -16,6 +16,17 @@ hence to the shared parameterization θ in the C4 workflow).
 This is a physically correct simplified Hopkins model: the PSF is the
 Airy-like response of a partially coherent imaging system, which is the
 dominant effect determining print fidelity for dense periodic structures.
+
+Deduplication note (WS-B)
+-------------------------
+This ``HopkinsLithoModel`` overlaps with OpenLithoHub's ``HopkinsSimulator``
+(``openlithohub/simulators/hopkins_sim.py``) + ``apply_differentiable_resist``
+(``openlithohub/_utils/resist_model.py``).  Both implement the same
+PSF-convolution → sigmoid-resist pipeline.  The OpenLithoHub version uses
+full SOCS decomposition with multiple illumination types and kernel caching,
+while this version uses a Gaussian PSF approximation.  For new ILT/OPC work
+outside DiffNano, prefer the OpenLithoHub ``HopkinsSimulator``.  This file
+is retained for DiffNano-internal use and standalone DiffNano workflows.
 """
 
 from __future__ import annotations
