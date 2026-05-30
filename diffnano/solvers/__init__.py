@@ -18,6 +18,7 @@ __all__ = [
     "SimResult",
     "RCWASolver",
     "FDFDSolver2D",
+    "SparseFDFDSolver2D",
     "FDTDSolver2D",
     "FDTDSolver3D",
     "NeuralSurrogate",
@@ -77,6 +78,10 @@ def __getattr__(name):
         from diffnano.solvers.fdfd2d import FDFDSolver2D
 
         return FDFDSolver2D
+    if name == "SparseFDFDSolver2D":
+        from diffnano.solvers.fdfd2d_sparse import SparseFDFDSolver2D
+
+        return SparseFDFDSolver2D
     if name == "FDTDSolver2D":
         from diffnano.solvers.fdtd2d import FDTDSolver2D
 

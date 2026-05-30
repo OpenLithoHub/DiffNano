@@ -139,40 +139,48 @@ class FDTDSolver2D:
         self.checkpoint_segments = checkpoint_segments
 
         # Speed of light normalization: c = 1
-        # dt from Courant condition: dt = courant * dl / (c * sqrt(2))
-        # With c=1 in normalized units where dl is in some length unit:
         self.dt = courant * dl / math.sqrt(2.0)
-
-        # Angular frequency
         self.omega = 2 * math.pi / wavelength_nm
 
-        # CPML regions
+        # CPML regions (coefficients built on CPU, cached to device lazily)
         H, W = grid_shape
         self._cpml_x = _CPMLRegion(W, pml_layers, dl, self.dt)
         self._cpml_y = _CPMLRegion(H, pml_layers, dl, self.dt)
+        self._cpml_device_cached = False
 
     @property
     def device(self) -> torch.device:
         return self._device
+
+    # ------------------------------------------------------------------
+    # Lazy CPML device caching
+    # ------------------------------------------------------------------
+
+    def _ensure_cpml_on_device(self) -> None:
+        """Move CPML damping coefficients to the target device once."""
+        if self._cpml_device_cached:
+            return
+        self._cached_bx = self._cpml_x.b.to(self._device).to(torch.float64)
+        self._cached_cx = self._cpml_x.c.to(self._device).to(torch.float64)
+        self._cached_by = self._cpml_y.b.to(self._device).to(torch.float64)
+        self._cached_cy = self._cpml_y.c.to(self._device).to(torch.float64)
+        self._cpml_device_cached = True
+
+    def _cpml_damping(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return cached CPML damping coefficients for x and y boundaries."""
+        self._ensure_cpml_on_device()
+        return self._cached_bx, self._cached_cx, self._cached_by, self._cached_cy
+
+    # ------------------------------------------------------------------
+    # Source helpers
+    # ------------------------------------------------------------------
 
     def _source_waveform(
         self,
         step: int,
         source: dict,
     ) -> torch.Tensor:
-        """Compute source amplitude at a given time step.
-
-        Parameters
-        ----------
-        step : int
-            Current time step index.
-        source : dict
-            Source configuration.
-
-        Returns
-        -------
-        amplitude : Tensor, scalar
-        """
+        """Compute source amplitude at a given time step."""
         src_type = source.get("type", "gaussian_pulse")
         t = step * self.dt
         omega = self.omega
@@ -196,43 +204,31 @@ class FDTDSolver2D:
         else:
             return torch.tensor(0.0, dtype=torch.float64, device=device)
 
-    def _inject_source(
-        self,
-        field: torch.Tensor,
-        step: int,
-        source: dict,
-    ) -> torch.Tensor:
-        """Inject source into the field.
+    def _build_source_mask(self, source: dict) -> torch.Tensor:
+        """Pre-build source injection mask for the current source config.
 
-        Supports point, line, and area sources.
+        Returns a (H, W) tensor that is 1 at source locations and 0 elsewhere.
+        Used to inject sources via ``field + mask * waveform`` instead of
+        ``clone() + scatter``, avoiding per-step memory allocation.
         """
         H, W = self.grid_shape
-        waveform = self._source_waveform(step, source)
+        mask = torch.zeros(H, W, dtype=torch.float64, device=self._device)
 
         pos = source.get("pos", None)
         if pos is not None:
             y, x = pos
             if 0 <= y < H and 0 <= x < W:
-                field = field.clone()
-                field[y, x] = field[y, x] + waveform
+                mask[y, x] = 1.0
         else:
             row = source.get("row", H // 2)
             if 0 <= row < H:
-                field = field.clone()
-                field[row, :] = field[row, :] + waveform
+                mask[row, :] = 1.0
 
-        return field
+        return mask
 
-    def _cpml_damping(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Extract CPML damping coefficients for x and y boundaries.
-
-        Returns (b_x, c_x, b_y, c_y) shaped for broadcasting with (H, W).
-        """
-        b_x = self._cpml_x.b.to(self._device).to(torch.float64)
-        c_x = self._cpml_x.c.to(self._device).to(torch.float64)
-        b_y = self._cpml_y.b.to(self._device).to(torch.float64)
-        c_y = self._cpml_y.c.to(self._device).to(torch.float64)
-        return b_x, c_x, b_y, c_y
+    # ------------------------------------------------------------------
+    # Time-stepping kernels (no source injection — handled in run loop)
+    # ------------------------------------------------------------------
 
     def _time_step_tm(
         self,
@@ -241,8 +237,6 @@ class FDTDSolver2D:
         Hy: torch.Tensor,
         eps_r: torch.Tensor,
         mu_r: torch.Tensor,
-        step: int,
-        source: dict,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """One FDTD time step for TM polarization (Ez, Hx, Hy) with CPML."""
         dt = self.dt
@@ -270,8 +264,6 @@ class FDTDSolver2D:
             c_x.unsqueeze(0) * dHy_dx + dHy_dx - c_y.unsqueeze(1) * dHx_dy - dHx_dy
         )
 
-        Ez = self._inject_source(Ez, step, source)
-
         return Ez, Hx, Hy
 
     def _time_step_te(
@@ -281,8 +273,6 @@ class FDTDSolver2D:
         Ey: torch.Tensor,
         eps_r: torch.Tensor,
         mu_r: torch.Tensor,
-        step: int,
-        source: dict,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """One FDTD time step for TE polarization (Hz, Ex, Ey) with CPML."""
         dt = self.dt
@@ -310,9 +300,11 @@ class FDTDSolver2D:
             c_x.unsqueeze(0) * dEy_dx + dEy_dx - c_y.unsqueeze(1) * dEx_dy - dEx_dy
         )
 
-        Hz = self._inject_source(Hz, step, source)
-
         return Hz, Ex, Ey
+
+    # ------------------------------------------------------------------
+    # Run loops (source injection inlined with pre-built mask)
+    # ------------------------------------------------------------------
 
     def _run_steps(
         self,
@@ -320,12 +312,9 @@ class FDTDSolver2D:
         mu_r: torch.Tensor,
         n_steps: int,
         source: dict,
+        source_mask: torch.Tensor,
     ) -> tuple[torch.Tensor, list[torch.Tensor]]:
-        """Run FDTD for n_steps, returning final E-field and time-series snapshots.
-
-        Returns (final_field, snapshots) where snapshots is a list of field
-        values at probe points over time.
-        """
+        """Run FDTD for n_steps, returning final E-field and time-series snapshots."""
         H, W = self.grid_shape
         device = self._device
         dtype = torch.float64
@@ -339,7 +328,9 @@ class FDTDSolver2D:
             probe_pos = source.get("probe", None)
 
             for step in range(n_steps):
-                Ez, Hx, Hy = self._time_step_tm(Ez, Hx, Hy, eps_r, mu_r, step, source)
+                Ez, Hx, Hy = self._time_step_tm(Ez, Hx, Hy, eps_r, mu_r)
+                waveform = self._source_waveform(step, source)
+                Ez = Ez + source_mask * waveform
 
                 if probe_pos is not None:
                     py, px = probe_pos
@@ -355,7 +346,9 @@ class FDTDSolver2D:
             probe_pos = source.get("probe", None)
 
             for step in range(n_steps):
-                Hz, Ex, Ey = self._time_step_te(Hz, Ex, Ey, eps_r, mu_r, step, source)
+                Hz, Ex, Ey = self._time_step_te(Hz, Ex, Ey, eps_r, mu_r)
+                waveform = self._source_waveform(step, source)
+                Hz = Hz + source_mask * waveform
 
                 if probe_pos is not None:
                     py, px = probe_pos
@@ -369,39 +362,34 @@ class FDTDSolver2D:
         mu_r: torch.Tensor,
         n_steps: int,
         source: dict,
+        source_mask: torch.Tensor,
     ) -> tuple[torch.Tensor, list[torch.Tensor]]:
-        """Run FDTD with gradient checkpointing.
-
-        Divides the time steps into segments and checkpoints each segment
-        boundary, recomputing intermediate states during backward.
-        """
+        """Run FDTD with gradient checkpointing."""
         seg_len = max(1, n_steps // self.checkpoint_segments)
 
         def _segment_forward(e_field, h_field_1, h_field_2, eps, mu, start_step, steps):
-            """Run a segment of FDTD steps."""
             if self.polarization == "TM":
                 Ez, Hx, Hy = e_field, h_field_1, h_field_2
                 for step in range(start_step, start_step + steps):
-                    Ez, Hx, Hy = self._time_step_tm(Ez, Hx, Hy, eps, mu, step, source)
+                    Ez, Hx, Hy = self._time_step_tm(Ez, Hx, Hy, eps, mu)
+                    waveform = self._source_waveform(step, source)
+                    Ez = Ez + source_mask * waveform
                 return Ez, Hx, Hy
             else:
                 Hz, Ex, Ey = e_field, h_field_1, h_field_2
                 for step in range(start_step, start_step + steps):
-                    Hz, Ex, Ey = self._time_step_te(Hz, Ex, Ey, eps, mu, step, source)
+                    Hz, Ex, Ey = self._time_step_te(Hz, Ex, Ey, eps, mu)
+                    waveform = self._source_waveform(step, source)
+                    Hz = Hz + source_mask * waveform
                 return Hz, Ex, Ey
 
         H, W = self.grid_shape
         device = self._device
         dtype = torch.float64
 
-        if self.polarization == "TM":
-            e_field = torch.zeros(H, W, dtype=dtype, device=device)
-            h1 = torch.zeros(H, W, dtype=dtype, device=device)
-            h2 = torch.zeros(H, W, dtype=dtype, device=device)
-        else:
-            e_field = torch.zeros(H, W, dtype=dtype, device=device)
-            h1 = torch.zeros(H, W, dtype=dtype, device=device)
-            h2 = torch.zeros(H, W, dtype=dtype, device=device)
+        e_field = torch.zeros(H, W, dtype=dtype, device=device)
+        h1 = torch.zeros(H, W, dtype=dtype, device=device)
+        h2 = torch.zeros(H, W, dtype=dtype, device=device)
 
         step_idx = 0
         while step_idx < n_steps:
@@ -462,8 +450,9 @@ class FDTDSolver2D:
         if eps_r.dim() == 3:
             eps_r = eps_r.squeeze(0)
 
-        # Permeability (uniform = 1 for non-magnetic materials)
         mu_r = torch.ones_like(eps_r)
+
+        source_mask = self._build_source_mask(src)
 
         if self.use_checkpoint:
             final_field, snapshots = self._run_steps_checkpointed(
@@ -471,6 +460,7 @@ class FDTDSolver2D:
                 mu_r,
                 self.n_steps,
                 src,
+                source_mask,
             )
         else:
             final_field, snapshots = self._run_steps(
@@ -478,6 +468,7 @@ class FDTDSolver2D:
                 mu_r,
                 self.n_steps,
                 src,
+                source_mask,
             )
 
         return SimResult(
@@ -524,8 +515,9 @@ class FDTDSolver2D:
             eps_r = eps_r.squeeze(0)
         mu_r = torch.ones_like(eps_r)
 
+        source_mask = self._build_source_mask(src)
         steps = n_steps or self.n_steps
-        _, snapshots = self._run_steps(eps_r, mu_r, steps, src)
+        _, snapshots = self._run_steps(eps_r, mu_r, steps, src, source_mask)
 
         if snapshots:
             return torch.stack(snapshots)

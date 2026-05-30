@@ -129,7 +129,6 @@ class FDTDSolver3D:
         self.use_checkpoint = use_checkpoint
         self.checkpoint_segments = checkpoint_segments
 
-        # Courant condition for 3D: dt < dl / (c * sqrt(3))
         self.dt = courant * dl / math.sqrt(3.0)
         self.omega = 2 * math.pi / wavelength_nm
 
@@ -137,20 +136,40 @@ class FDTDSolver3D:
         self._cpml_x = _CPMLRegion3D(W, pml_layers, dl, self.dt)
         self._cpml_y = _CPMLRegion3D(H, pml_layers, dl, self.dt)
         self._cpml_z = _CPMLRegion3D(D, pml_layers, dl, self.dt)
+        self._cpml_device_cached = False
 
     @property
     def device(self) -> torch.device:
         return self._device
 
+    # ------------------------------------------------------------------
+    # Lazy CPML device caching
+    # ------------------------------------------------------------------
+
+    def _ensure_cpml_on_device(self) -> None:
+        """Move CPML damping coefficients to the target device once."""
+        if self._cpml_device_cached:
+            return
+        self._cached_bx = self._cpml_x.b.to(self._device).to(torch.float64)
+        self._cached_cx = self._cpml_x.c.to(self._device).to(torch.float64)
+        self._cached_by = self._cpml_y.b.to(self._device).to(torch.float64)
+        self._cached_cy = self._cpml_y.c.to(self._device).to(torch.float64)
+        self._cached_bz = self._cpml_z.b.to(self._device).to(torch.float64)
+        self._cached_cz = self._cpml_z.c.to(self._device).to(torch.float64)
+        self._cpml_device_cached = True
+
     def _cpml_damping(self) -> tuple[torch.Tensor, ...]:
-        """Extract CPML damping coefficients for x, y, z boundaries."""
-        b_x = self._cpml_x.b.to(self._device).to(torch.float64)
-        c_x = self._cpml_x.c.to(self._device).to(torch.float64)
-        b_y = self._cpml_y.b.to(self._device).to(torch.float64)
-        c_y = self._cpml_y.c.to(self._device).to(torch.float64)
-        b_z = self._cpml_z.b.to(self._device).to(torch.float64)
-        c_z = self._cpml_z.c.to(self._device).to(torch.float64)
-        return b_x, c_x, b_y, c_y, b_z, c_z
+        """Return cached CPML damping coefficients for x, y, z boundaries."""
+        self._ensure_cpml_on_device()
+        return (
+            self._cached_bx, self._cached_cx,
+            self._cached_by, self._cached_cy,
+            self._cached_bz, self._cached_cz,
+        )
+
+    # ------------------------------------------------------------------
+    # Source helpers
+    # ------------------------------------------------------------------
 
     def _source_waveform(self, step: int, source: dict) -> torch.Tensor:
         src_type = source.get("type", "gaussian_pulse")
@@ -173,68 +192,43 @@ class FDTDSolver3D:
             return torch.tensor(amp * ramp * math.sin(omega * t), dtype=torch.float64, device=dev)
         return torch.tensor(0.0, dtype=torch.float64, device=dev)
 
-    def _inject_source(
-        self,
-        field: torch.Tensor,
-        step: int,
-        source: dict,
-        component: str = "Ez",
-    ) -> torch.Tensor:
-        D, H, W = self.grid_shape
-        waveform = self._source_waveform(step, source)
+    def _build_source_mask(self, source: dict) -> torch.Tensor:
+        """Pre-build 3D source injection mask.
 
-        needs_clone = False
+        Returns a (D, H, W) tensor that is 1 at source locations and 0 elsewhere.
+        Supports point (pos), plane (xy/xz/yz), and default mid-plane sources.
+        """
+        D, H, W = self.grid_shape
+        mask = torch.zeros(D, H, W, dtype=torch.float64, device=self._device)
+
         pos = source.get("pos", None)
         if pos is not None:
             z, y, x = pos
             if 0 <= z < D and 0 <= y < H and 0 <= x < W:
-                needs_clone = True
+                mask[z, y, x] = 1.0
         else:
             plane = source.get("plane", None)
             if plane == "xy":
                 z = source.get("z", D // 2)
                 if 0 <= z < D:
-                    needs_clone = True
+                    mask[z, :, :] = 1.0
             elif plane == "xz":
                 y = source.get("y", H // 2)
                 if 0 <= y < H:
-                    needs_clone = True
+                    mask[:, y, :] = 1.0
             elif plane == "yz":
                 x = source.get("x", W // 2)
                 if 0 <= x < W:
-                    needs_clone = True
+                    mask[:, :, x] = 1.0
             else:
-                needs_clone = True
+                z, y = D // 2, H // 2
+                mask[z, y, :] = 1.0
 
-        if not needs_clone:
-            return field
+        return mask
 
-        field = field.clone()
-
-        if pos is not None:
-            z, y, x = pos
-            if 0 <= z < D and 0 <= y < H and 0 <= x < W:
-                field[z, y, x] = field[z, y, x] + waveform
-        else:
-            plane = source.get("plane", None)
-            if plane == "xy":
-                z = source.get("z", D // 2)
-                if 0 <= z < D:
-                    field[z, :, :] = field[z, :, :] + waveform
-            elif plane == "xz":
-                y = source.get("y", H // 2)
-                if 0 <= y < H:
-                    field[:, y, :] = field[:, y, :] + waveform
-            elif plane == "yz":
-                x = source.get("x", W // 2)
-                if 0 <= x < W:
-                    field[:, :, x] = field[:, :, x] + waveform
-            else:
-                z = D // 2
-                y = H // 2
-                field[z, y, :] = field[z, y, :] + waveform
-
-        return field
+    # ------------------------------------------------------------------
+    # Time-stepping kernel (no source injection)
+    # ------------------------------------------------------------------
 
     def _time_step(
         self,
@@ -246,8 +240,6 @@ class FDTDSolver3D:
         Hz: torch.Tensor,
         eps_r: torch.Tensor,
         mu_r: torch.Tensor,
-        step: int,
-        source: dict,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """One 3D FDTD time step (all six field components) with CPML."""
         dt = self.dt
@@ -325,9 +317,11 @@ class FDTDSolver3D:
             - dHx_dy
         )
 
-        Ez = self._inject_source(Ez, step, source, "Ez")
-
         return Ex, Ey, Ez, Hx, Hy, Hz
+
+    # ------------------------------------------------------------------
+    # Run loops (source injection inlined with pre-built mask)
+    # ------------------------------------------------------------------
 
     def _run_steps(
         self,
@@ -335,6 +329,7 @@ class FDTDSolver3D:
         mu_r: torch.Tensor,
         n_steps: int,
         source: dict,
+        source_mask: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         D, H, W = self.grid_shape
         dev = self._device
@@ -349,17 +344,10 @@ class FDTDSolver3D:
 
         for step in range(n_steps):
             Ex, Ey, Ez, Hx, Hy, Hz = self._time_step(
-                Ex,
-                Ey,
-                Ez,
-                Hx,
-                Hy,
-                Hz,
-                eps_r,
-                mu_r,
-                step,
-                source,
+                Ex, Ey, Ez, Hx, Hy, Hz, eps_r, mu_r,
             )
+            waveform = self._source_waveform(step, source)
+            Ez = Ez + source_mask * waveform
 
         return Ez, Ex, Ey
 
@@ -369,23 +357,17 @@ class FDTDSolver3D:
         mu_r: torch.Tensor,
         n_steps: int,
         source: dict,
+        source_mask: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         seg_len = max(1, n_steps // self.checkpoint_segments)
 
         def _segment(Ex, Ey, Ez, Hx, Hy, Hz, eps, mu, start, steps):
             for step in range(start, start + steps):
                 Ex, Ey, Ez, Hx, Hy, Hz = self._time_step(
-                    Ex,
-                    Ey,
-                    Ez,
-                    Hx,
-                    Hy,
-                    Hz,
-                    eps,
-                    mu,
-                    step,
-                    source,
+                    Ex, Ey, Ez, Hx, Hy, Hz, eps, mu,
                 )
+                waveform = self._source_waveform(step, source)
+                Ez = Ez + source_mask * waveform
             return Ex, Ey, Ez, Hx, Hy, Hz
 
         D, H, W = self.grid_shape
@@ -404,16 +386,9 @@ class FDTDSolver3D:
             steps_this = min(seg_len, n_steps - step_idx)
             Ex, Ey, Ez, Hx, Hy, Hz = cp.checkpoint(
                 _segment,
-                Ex,
-                Ey,
-                Ez,
-                Hx,
-                Hy,
-                Hz,
-                eps_r,
-                mu_r,
-                step_idx,
-                steps_this,
+                Ex, Ey, Ez, Hx, Hy, Hz,
+                eps_r, mu_r,
+                step_idx, steps_this,
                 use_reentrant=False,
             )
             step_idx += steps_this
@@ -462,10 +437,12 @@ class FDTDSolver3D:
 
         mu_r = torch.ones_like(eps_r)
 
+        source_mask = self._build_source_mask(src)
+
         if self.use_checkpoint:
-            Ez, Ex, Ey = self._run_steps_checkpointed(eps_r, mu_r, self.n_steps, src)
+            Ez, Ex, Ey = self._run_steps_checkpointed(eps_r, mu_r, self.n_steps, src, source_mask)
         else:
-            Ez, Ex, Ey = self._run_steps(eps_r, mu_r, self.n_steps, src)
+            Ez, Ex, Ey = self._run_steps(eps_r, mu_r, self.n_steps, src, source_mask)
 
         field = torch.stack([Ez, Ex, Ey], dim=0)  # (3, D, H, W)
 
@@ -487,20 +464,7 @@ class FDTDSolver3D:
         source: dict | None = None,
         n_steps: int | None = None,
     ) -> torch.Tensor:
-        """Run FDTD and return Ez time-series at a probe point.
-
-        Parameters
-        ----------
-        eps_r : Tensor, shape ``(D, H, W)``
-        probe : tuple[int, int, int]
-            ``(z, y, x)`` probe position.
-        source : dict, optional
-        n_steps : int, optional
-
-        Returns
-        -------
-        ts : Tensor, shape ``(n_steps,)``
-        """
+        """Run FDTD and return Ez time-series at a probe point."""
         src = source or {"type": "gaussian_pulse"}
 
         eps_r = eps_r.to(self._device).to(torch.float64)
@@ -510,6 +474,7 @@ class FDTDSolver3D:
             eps_r = eps_r.unsqueeze(0)
         mu_r = torch.ones_like(eps_r)
 
+        source_mask = self._build_source_mask(src)
         steps = n_steps or self.n_steps
         D, H, W = self.grid_shape
         dev = self._device
@@ -527,17 +492,10 @@ class FDTDSolver3D:
 
         for step in range(steps):
             Ex, Ey, Ez, Hx, Hy, Hz = self._time_step(
-                Ex,
-                Ey,
-                Ez,
-                Hx,
-                Hy,
-                Hz,
-                eps_r,
-                mu_r,
-                step,
-                src,
+                Ex, Ey, Ez, Hx, Hy, Hz, eps_r, mu_r,
             )
+            waveform = self._source_waveform(step, src)
+            Ez = Ez + source_mask * waveform
             snapshots.append(Ez[pz, py, px].detach().clone())
 
         return torch.stack(snapshots)

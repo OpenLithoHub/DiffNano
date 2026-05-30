@@ -3,6 +3,9 @@
 Implements an S-matrix formulation for periodic multilayer structures with
 full PyTorch autograd support.
 
+Batched mode: wavelengths and layers are processed with batched
+``torch.linalg.eigh`` and ``torch.linalg.solve`` for GPU utilization.
+
 References
 ----------
 - Liu & Fan (2020), grcwa: arXiv:2005.01481 (baseline, no degeneracy handling)
@@ -46,12 +49,46 @@ def _build_toeplitz_1d(
     indices = torch.arange(-half, half + 1, device=eps_profile.device) % N
     coeffs = eps_fft[indices]
 
-    # Build Toeplitz (not circulant) matrix using FFT coefficient indexing
     row_idx = torch.arange(n_fourier, device=eps_profile.device)
     col_idx = torch.arange(n_fourier, device=eps_profile.device)
     diff = col_idx.unsqueeze(0) - row_idx.unsqueeze(1) + half
     diff = diff.clamp(0, n_fourier - 1)
     eps_conv = coeffs[diff]
+
+    return eps_conv
+
+
+def _build_toeplitz_batched(
+    eps_layers: torch.Tensor,
+    n_fourier: int,
+) -> torch.Tensor:
+    """Build Toeplitz matrices for all layers simultaneously.
+
+    Parameters
+    ----------
+    eps_layers : Tensor, shape ``(n_layers, N_grid)``
+    n_fourier : int
+
+    Returns
+    -------
+    eps_conv : Tensor, shape ``(n_layers, n_fourier, n_fourier)``, complex128
+    """
+    n_layers = eps_layers.shape[0]
+    N = eps_layers.shape[1]
+    device = eps_layers.device
+
+    eps_fft = torch.fft.fft(eps_layers.to(torch.complex128), dim=-1) / N
+
+    half = n_fourier // 2
+    indices = torch.arange(-half, half + 1, device=device) % N
+    coeffs = eps_fft[:, indices]  # (n_layers, n_fourier)
+
+    row_idx = torch.arange(n_fourier, device=device)
+    col_idx = torch.arange(n_fourier, device=device)
+    diff = col_idx.unsqueeze(0) - row_idx.unsqueeze(1) + half
+    diff = diff.clamp(0, n_fourier - 1)
+
+    eps_conv = coeffs[:, diff]  # (n_layers, n_fourier, n_fourier)
 
     return eps_conv
 
@@ -80,20 +117,15 @@ def _propagate_layer(
     Kx = Kx.to(dtype)
     Ky = Ky.to(dtype)
 
-    # P = eps_conv - Kx^2 (1D simplification)
     P = eps_conv - Kx @ Kx
 
-    # Make P Hermitian for stable eigendecomposition
     P_herm = (P + P.conj().mT) / 2.0
 
     eigenvalues, eigenvectors = torch.linalg.eigh(P_herm)
 
-    # Handle evanescent modes: negative eigenvalues → imaginary gamma
-    # Use complex sqrt with small damping for numerical stability
     damping = 1e-10
     gamma = torch.sqrt(eigenvalues.to(dtype) + damping)
 
-    # Phase accumulation (imaginary for evanescent → exponential decay)
     phase = torch.exp(1j * k0 * thickness_nm * gamma)
 
     return phase, eigenvectors
@@ -195,56 +227,73 @@ class RCWASolver:
         polarization: str,
         thickness_nm: float | None = None,
     ) -> SimResult:
-        """Forward pass for 1D grating (n_layers, n_grid)."""
+        """Forward pass for 1D grating (n_layers, n_grid) — batched over wavelengths."""
         n_layers = eps_layers.shape[0]
         n_wl = wavelengths.shape[0]
         n = self.n_fourier
         device = self.device
         px, py = self.period_nm
+        dtype = torch.complex128
 
-        all_efficiencies = []
+        # 1. Build Toeplitz for all layers: (n_layers, n, n)
+        eps_conv_all = _build_toeplitz_batched(eps_layers, n)
 
-        for wi in range(n_wl):
-            wl = wavelengths[wi]
-            k0 = 2 * math.pi / wl
-            kx0 = k0 * math.sin(math.radians(theta))
+        # 2. Expand to (n_wl, n_layers, n, n)
+        eps_conv_batch = eps_conv_all.unsqueeze(0).expand(n_wl, -1, -1, -1)
 
-            total_field = torch.ones(n, dtype=torch.complex128, device=device)
+        # 3. Build P matrix for all (wl, layer) pairs
+        k0_all = 2 * math.pi / wavelengths  # (n_wl,)
+        kx0_all = k0_all * math.sin(math.radians(theta))  # (n_wl,)
 
-            for li in range(n_layers):
-                eps_profile = eps_layers[li]
-                eps_conv = _build_toeplitz_1d(eps_profile, n)
+        m = torch.arange(n, device=device, dtype=torch.float64) - n // 2
 
-                layer_thickness = thickness_nm if thickness_nm is not None else px / n_layers
+        # Kx diagonal per wavelength: kx0 + m * 2pi/px / k0 → (n_wl, n)
+        kx_diag = kx0_all.unsqueeze(1) + m.unsqueeze(0) * (2 * math.pi / px) / k0_all.unsqueeze(1)
+        kx_sq_diag = kx_diag**2  # (n_wl, n)
 
-                phase, evecs = _propagate_layer(
-                    eps_conv,
-                    torch.tensor([kx0], device=device, dtype=torch.float64),
-                    torch.zeros(1, device=device, dtype=torch.float64),
-                    k0,
-                    layer_thickness,
-                    px,
-                    py,
-                )
+        # Build Kx^2 as diagonal matrix: (n_wl, n, n)
+        kx_sq_mat = torch.diag_embed(kx_sq_diag.to(dtype))  # (n_wl, n, n)
 
-                # Use solve instead of inv for numerical stability
-                coeffs = torch.linalg.solve(evecs, total_field.to(torch.complex128))
-                coeffs = coeffs * phase
-                total_field = evecs @ coeffs
+        # P = eps_conv - Kx^2: (n_wl, n_layers, n, n) - (n_wl, 1, n, n)
+        P = eps_conv_batch - kx_sq_mat.unsqueeze(1)
 
-            # Transmission efficiency per order
-            eff = (total_field * total_field.conj()).real
-            eff = torch.clamp(eff, min=0.0)
-            total = eff.sum()
-            if total > 0:
-                eff = eff / total
+        # Hermitian symmetrize
+        P_herm = (P + P.conj().transpose(-2, -1)) / 2.0
 
-            all_efficiencies.append(eff)
+        # 4. Batch eigendecomposition: (n_wl * n_layers, n, n)
+        P_flat = P_herm.reshape(n_wl * n_layers, n, n)
+        eigenvalues_flat, eigenvectors_flat = torch.linalg.eigh(P_flat)
+        eigenvalues = eigenvalues_flat.reshape(n_wl, n_layers, n)
+        eigenvectors = eigenvectors_flat.reshape(n_wl, n_layers, n, n)
 
-        field = torch.stack(all_efficiencies)
+        # 5. Compute gamma and phase for all (wl, layer)
+        gamma = torch.sqrt(eigenvalues.to(dtype) + 1e-10)  # (n_wl, n_layers, n)
+
+        layer_thickness = thickness_nm if thickness_nm is not None else px / n_layers
+        k0_expanded = k0_all.unsqueeze(1).unsqueeze(2)  # (n_wl, 1, 1)
+        phase = torch.exp(1j * k0_expanded * layer_thickness * gamma)  # (n_wl, n_layers, n)
+
+        # 6. Layer-by-layer propagation (sequential over layers, batched over wavelengths)
+        total_field = torch.ones(n_wl, n, dtype=dtype, device=device)
+
+        for li in range(n_layers):
+            evecs_li = eigenvectors[:, li]  # (n_wl, n, n)
+            phase_li = phase[:, li]  # (n_wl, n)
+
+            # coeffs = solve(evecs, total_field)
+            coeffs = torch.linalg.solve(evecs_li, total_field.unsqueeze(-1)).squeeze(-1)
+            coeffs = coeffs * phase_li
+            total_field = torch.bmm(evecs_li, coeffs.unsqueeze(-1)).squeeze(-1)
+
+        # 7. Transmission efficiency per order
+        eff = (total_field * total_field.conj()).real  # (n_wl, n)
+        eff = torch.clamp(eff, min=0.0)
+        totals = eff.sum(dim=-1, keepdim=True)
+        totals = torch.where(totals > 0, totals, torch.ones_like(totals))
+        eff = eff / totals
 
         return SimResult(
-            field=field.to(torch.float64),
+            field=eff.to(torch.float64),
             wavelengths=wavelengths,
             metadata={
                 "n_layers": n_layers,

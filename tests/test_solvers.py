@@ -169,6 +169,106 @@ class TestFDFDSolver2D:
 
 
 # -----------------------------------------------------------------------
+# Sparse FDFD 2D Solver
+# -----------------------------------------------------------------------
+
+
+class TestSparseFDFDSolver2D:
+    @pytest.fixture
+    def solver(self):
+        from diffnano.solvers.fdfd2d_sparse import SparseFDFDSolver2D
+
+        return SparseFDFDSolver2D(
+            grid_shape=(12, 12),
+            dl=20.0,
+            wavelength_nm=1550.0,
+            polarization="TM",
+            pml_layers=2,
+            device="cpu",
+        )
+
+    def test_init(self, solver):
+        assert solver.grid_shape == (12, 12)
+        assert solver.polarization == "TM"
+
+    def test_forward_shape(self, solver):
+        eps = torch.ones(12, 12, dtype=torch.float64) * 2.25
+        result = solver.forward(eps)
+        assert isinstance(result, SimResult)
+        assert result.field.shape[0] == 1
+        assert result.field.shape[1] == 12 * 12
+
+    def test_gradient_flows(self, solver):
+        eps = torch.full((12, 12), 2.25, dtype=torch.float64, requires_grad=True)
+        result = solver.forward(eps)
+        loss = result.field.abs().sum()
+        loss.backward()
+        assert eps.grad is not None
+        assert eps.grad.shape == (12, 12)
+
+    def test_solve_method(self, solver):
+        eps = torch.ones(12, 12, dtype=torch.float64) * 2.25
+        field = solver.solve(eps)
+        assert field.shape == (12, 12)
+
+    def test_solver_protocol(self, solver):
+        assert isinstance(solver, Solver)
+
+    def test_sparse_metadata(self, solver):
+        eps = torch.ones(12, 12, dtype=torch.float64) * 2.25
+        result = solver.forward(eps)
+        assert result.metadata.get("sparse") is True
+
+    def test_gradient_matches_dense_tm(self):
+        """Sparse adjoint gradient must match dense autograd gradient."""
+        from diffnano.solvers.fdfd2d import FDFDSolver2D
+        from diffnano.solvers.fdfd2d_sparse import SparseFDFDSolver2D
+
+        grid = (10, 10)
+        kwargs = dict(grid_shape=grid, dl=20.0, wavelength_nm=1550.0, polarization="TM", pml_layers=2)
+
+        dense = FDFDSolver2D(**kwargs)
+        sparse = SparseFDFDSolver2D(**kwargs)
+
+        eps_base = torch.full(grid, 2.25, dtype=torch.float64)
+
+        # Dense autograd
+        eps_d = eps_base.clone().detach().requires_grad_(True)
+        result_d = dense.forward(eps_d)
+        loss_d = result_d.field.abs().sum()
+        loss_d.backward()
+        grad_d = eps_d.grad.clone()
+
+        # Sparse adjoint
+        eps_s = eps_base.clone().detach().requires_grad_(True)
+        result_s = sparse.forward(eps_s)
+        loss_s = result_s.field.abs().sum()
+        loss_s.backward()
+        grad_s = eps_s.grad.clone()
+
+        rel_err = (grad_d - grad_s).abs() / (grad_d.abs() + 1e-8)
+        assert rel_err.max() < 0.05, f"Gradient mismatch: max rel err = {rel_err.max():.4f}"
+
+    def test_te_polarization(self):
+        from diffnano.solvers.fdfd2d_sparse import SparseFDFDSolver2D
+
+        solver = SparseFDFDSolver2D(
+            grid_shape=(10, 10),
+            dl=20.0,
+            polarization="TE",
+            pml_layers=0,
+        )
+        eps = torch.ones(10, 10, dtype=torch.float64) * 2.25
+        result = solver.forward(eps)
+        assert result.field.shape[0] == 1
+
+    def test_3d_geometry_input(self, solver):
+        eps = torch.ones(1, 12, 12, dtype=torch.float64) * 2.25
+        result = solver.forward(eps)
+        assert result.field.shape[0] == 1
+
+
+# -----------------------------------------------------------------------
 # FDTD 2D Solver
 # -----------------------------------------------------------------------
 
