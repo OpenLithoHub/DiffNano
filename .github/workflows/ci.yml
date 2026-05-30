@@ -39,3 +39,25 @@ jobs:
       - uses: actions/checkout@v4
       - run: pip install -e ".[dev,cuda]"
       - run: pytest -m gpu
+
+  flagship-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: make flagship-a-ci
+      - name: Validate output JSON
+        run: |
+          python3 -c "
+          import json
+          p = 'flagship_metalens_results.json'
+          with open(p) as f:
+              data = json.load(f)
+          assert 'aggregated' in data, 'missing aggregated'
+          assert 'per_seed' in data, 'missing per_seed'
+          assert data['n_seeds'] == 3, f'expected 3 seeds, got {data[\"n_seeds\"]}'
+          print('OK: flagship output JSON valid')
+          "
