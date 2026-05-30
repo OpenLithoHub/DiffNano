@@ -17,6 +17,9 @@ Gradient-based inverse design of nanophotonic devices with differentiable electr
 - No third-party experimental validation. All results are self-measured on a single workstation.
 - Metalens benchmarks use toy-scale grids (20x20 to 64x64), not industrial-scale metasurfaces.
 
+**Known stubs / unimplemented:**
+- `diffnano.workflows.splitter.SplitterDesigner` — beam splitter workflow returns `geometry.mean()` as a dummy efficiency proxy. Not a real EM simulation.
+
 </div>
 
 ---
@@ -39,6 +42,12 @@ Differentiable electromagnetic simulation is an active field with strong existin
 | Matrix sqrt RCWA | RCWA (matrix exp) | Analytical | Delft + ASML, PIER C vol.163, 2026 |
 | GAOT | Geometry-aware operator transformer | Yes | NeurIPS 2025, arXiv:2505.18781 — geometry-aware neural operator |
 | GINOT | SDF-trunk geometry-informed operator | Yes | CMAME 2025 — SDF-based geometry representation for neural operators |
+| DNOT | Feature-diffusion enhanced neural operator transformer | Yes | Eng. with Computers 42:60, 2026 — feature-diffusion enhanced neural operator |
+| DD-DeepONet | Domain decomposition DeepONet | Yes | Eng. Appl. Artif. Intell. 2026 — domain decomposition for operator learning |
+| Schwarz Neural Inference | Local→global domain decomposition operator learning | Yes | arXiv:2504.00510 v2, 2026-02 — Schwarz-type operator decomposition |
+| PIER C 2026 | Matrix Square Root RCWA | Analytical | Delft/ASML, *PIER C*, vol. 163, pp. 60–72, 2026 |
+| TorchRDIT (Blanes 2024) | R-DIT (Taylor-expanded matrix exp) | Yes (PyTorch) | Blanes et al., 2024 — eigendecomposition-free RCWA |
+| VarRCWA | Variable-order RCWA | Yes | 2024+ — variable Fourier order RCWA |
 
 DiffNano was built to learn how these solvers work by reimplementing them from scratch in PyTorch. It is not faster, more accurate, or more capable than the tools above.
 
@@ -225,6 +234,12 @@ The unified autograd graph propagates lithography printability gradients back in
 4. Matrix Square Root Based Differentiable RCWA, *PIER C*, vol. 163, 2026 (Delft University of Technology + ASML)
 5. GAOT: Geometry-Aware Operator Transformer for surrogate modeling. NeurIPS 2025, arXiv:2505.18781.
 6. GINOT: SDF-trunk geometry-informed neural operator. *Computer Methods in Applied Mechanics and Engineering* (CMAME), 2025.
+7. DNOT: Feature-diffusion enhanced neural operator transformer. *Engineering with Computers*, vol. 42, article 60, 2026.
+8. DD-DeepONet: Domain decomposition DeepONet. *Engineering Applications of Artificial Intelligence*, 2026.
+9. Schwarz Neural Inference: local→global domain decomposition operator learning. arXiv:2504.00510 v2, 2026-02.
+10. Matrix Square Root RCWA (PIER C 2026). *Progress In Electromagnetics Research C*, vol. 163, pp. 60–72, 2026 (Delft University of Technology + ASML).
+11. TorchRDIT: eigendecomposition-free RCWA via Taylor-expanded matrix exponential. Blanes et al., 2024.
+12. VarRCWA: variable-order Fourier RCWA, 2024+.
 
 ### 2. Open-Source Tool Comparison (Table 2)
 
