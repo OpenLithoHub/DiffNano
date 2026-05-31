@@ -1,5 +1,13 @@
-"""Design parameterization, projection, constraint, mask, latent warm-start, and quantization."""
+"""Design parameterization, projection, constraint, mask, latent warm-start, quantization, and latent diffusion."""
 
+from diffnano.design.latent_diffusion import (
+    ConditionedDiffusion,
+    LatentDecoder,
+    LatentDiffusionBenchmark,
+    LatentDiffusionDesigner,
+    LatentEncoder,
+    PhysicsGuidance,
+)
 from diffnano.design.quantized import (
     BinarySTE,
     QuantizationNoiseGuardrail,
@@ -20,4 +28,10 @@ __all__ = [
     "AngleSweepScorer",
     "ProcessCornerWarmStart",
     "RobustPosteriorWarmStart",
+    "LatentEncoder",
+    "LatentDecoder",
+    "PhysicsGuidance",
+    "ConditionedDiffusion",
+    "LatentDiffusionDesigner",
+    "LatentDiffusionBenchmark",
 ]
