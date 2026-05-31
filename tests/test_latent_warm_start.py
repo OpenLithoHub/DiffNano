@@ -10,10 +10,10 @@ from diffnano.design.latent_warm_start import (
 )
 from diffnano.design.representation_learning import LearnedRepresentation
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def trained_vae():
@@ -26,16 +26,16 @@ def trained_vae():
 
 @pytest.fixture
 def sampler(trained_vae):
-    return ConditionalLatentSampler(
-        vae=trained_vae, latent_dim=4, device="cpu"
-    )
+    return ConditionalLatentSampler(vae=trained_vae, latent_dim=4, device="cpu")
 
 
 @pytest.fixture
 def simple_fom():
     """FOM that prefers higher mean density (trivial, differentiable)."""
+
     def fom(geom: torch.Tensor) -> torch.Tensor:
         return geom.mean()
+
     return fom
 
 
@@ -56,10 +56,7 @@ class TestConditionalLatentSampler:
         condition = torch.rand(8, 8, dtype=torch.float64)
         candidates = sampler.sample_candidates(condition, n_candidates=6)
         # At least one pair must differ
-        all_same = all(
-            torch.allclose(candidates[0], candidates[i], atol=1e-6)
-            for i in range(1, 6)
-        )
+        all_same = all(torch.allclose(candidates[0], candidates[i], atol=1e-6) for i in range(1, 6))
         assert not all_same
 
     def test_sample_candidates_values_bounded(self, sampler):
@@ -76,9 +73,7 @@ class TestConditionalLatentSampler:
 
         initial_foms = torch.tensor([simple_fom(c).item() for c in candidates])
 
-        refined, histories = sampler.batch_refine(
-            candidates, simple_fom, n_steps=10, lr=0.01
-        )
+        refined, histories = sampler.batch_refine(candidates, simple_fom, n_steps=10, lr=0.01)
 
         refined_foms = torch.tensor([simple_fom(c).item() for c in refined])
 
@@ -89,9 +84,7 @@ class TestConditionalLatentSampler:
         """Top-k selection picks the highest-scoring candidates."""
         candidates = torch.rand(5, 8, 8, dtype=torch.float64)
 
-        best, scores, indices = sampler.score_and_select(
-            candidates, simple_fom, top_k=2
-        )
+        best, scores, indices = sampler.score_and_select(candidates, simple_fom, top_k=2)
 
         assert best.shape == (2, 8, 8)
         assert scores.shape == (5,)
@@ -121,6 +114,7 @@ class TestConditionalLatentSampler:
     def test_satisfies_candidate_sampler_protocol(self, sampler):
         """ConditionalLatentSampler should satisfy CandidateSampler protocol."""
         from diff_surrogate.generative import CandidateSampler
+
         assert isinstance(sampler, CandidateSampler)
 
 

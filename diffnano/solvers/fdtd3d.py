@@ -132,7 +132,14 @@ class _TimeReversalFDTD(torch.autograd.Function):
 
         for step in range(n_steps):
             Ex, Ey, Ez, Hx, Hy, Hz = solver._time_step(
-                Ex, Ey, Ez, Hx, Hy, Hz, eps_r_det, mu_r_det,
+                Ex,
+                Ey,
+                Ez,
+                Hx,
+                Hy,
+                Hz,
+                eps_r_det,
+                mu_r_det,
             )
             waveform = solver._source_waveform(step, source)
             Ez = Ez + source_mask * waveform
@@ -187,7 +194,14 @@ class _TimeReversalFDTD(torch.autograd.Function):
 
             for step in range(n_steps):
                 Ex, Ey, Ez, Hx, Hy, Hz = solver._time_step(
-                    Ex, Ey, Ez, Hx, Hy, Hz, eps_r, mu_r,
+                    Ex,
+                    Ey,
+                    Ez,
+                    Hx,
+                    Hy,
+                    Hz,
+                    eps_r,
+                    mu_r,
                 )
                 waveform = solver._source_waveform(step, source)
                 Ez = Ez + source_mask * waveform
@@ -598,7 +612,12 @@ class FDTDSolver3D:
 
         if use_tr:
             field = _TimeReversalFDTD.apply(
-                eps_r, mu_r, self, src, source_mask, self.n_steps,
+                eps_r,
+                mu_r,
+                self,
+                src,
+                source_mask,
+                self.n_steps,
             )
             return SimResult(
                 field=field,

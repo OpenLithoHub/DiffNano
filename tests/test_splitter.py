@@ -106,6 +106,4 @@ class TestSplitter5050Design:
 
         # Ratio should be close to 1.0 for symmetric structure
         ratio = s["splitting_ratio"].item()
-        assert ratio > 0.5, (
-            f"Symmetric grating splitting ratio should be > 0.5, got {ratio:.4f}"
-        )
+        assert ratio > 0.5, f"Symmetric grating splitting ratio should be > 0.5, got {ratio:.4f}"

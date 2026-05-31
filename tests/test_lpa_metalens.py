@@ -12,7 +12,6 @@ Tests cover:
 
 import math
 
-import pytest
 import torch
 
 from diffnano.workflows.lpa_metalens import (
@@ -21,7 +20,6 @@ from diffnano.workflows.lpa_metalens import (
     angular_spectrum_propagate,
     detect_coupling_regions,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -61,7 +59,7 @@ class TestLibraryBuild:
         assert lib.phases is not None
         assert lib.transmissions is not None
         # Amplitudes should be in [0, 1]
-        assert lib.amplitures.min().item() >= 0.0 if hasattr(lib, 'amplitures') else True
+        assert lib.amplitures.min().item() >= 0.0 if hasattr(lib, "amplitures") else True
         assert lib.amplitudes.min().item() >= 0.0
         assert lib.amplitudes.max().item() <= 1.5  # some tolerance for RCWA normalization
 
@@ -170,8 +168,8 @@ class TestAngularSpectrumFocalSpot:
         intensity = (propagated * propagated.conj()).real
         # Focal spot should be near center
         center = N // 2
-        peak = intensity.max()
-        center_intensity = intensity[center - 2 : center + 3, center - 2 : center + 3].max()
+        intensity.max()
+        intensity[center - 2 : center + 3, center - 2 : center + 3].max()
         # Peak should be at or near center (within a few pixels)
         peak_idx = intensity.argmax()
         peak_y, peak_x = peak_idx // N, peak_idx % N
@@ -241,9 +239,7 @@ class TestLPAvsFullRCWA:
         needed_phase = target_phase % (2 * math.pi)
         # Solve for geometry param: phase = k0 * dn * thickness * param
         param_from_phase = needed_phase / (k0 * dn * lpa.library.thickness_nm)
-        param_from_phase = param_from_phase.clamp(
-            lpa.library.param_min, lpa.library.param_max
-        )
+        param_from_phase = param_from_phase.clamp(lpa.library.param_min, lpa.library.param_max)
 
         strehl_matched = lpa.strehl_ratio(param_from_phase)
         # The Strehl should be reasonable (not perfect due to discretization)
@@ -320,7 +316,7 @@ class TestTwoLevelOptimizer:
 
         assert params.shape == (6, 6)
         assert len(loss_history) > 0
-        assert all(math.isfinite(l) for l in loss_history)
+        assert all(math.isfinite(val) for val in loss_history)
         # Loss should decrease (at least from first to last of LPA phase)
         # For the LPA portion, first ~30 entries
         lpa_losses = loss_history[:30]

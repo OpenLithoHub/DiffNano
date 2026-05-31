@@ -140,7 +140,9 @@ class TestTwoStageOptimizer:
         proxy_top = opt.prescreen(candidates, objective)
 
         # Check hit rate
-        true_top_k_idx = sorted(range(len(exact_scores)), key=lambda i: exact_scores[i])[:opt.top_k]
+        true_top_k_idx = sorted(range(len(exact_scores)), key=lambda i: exact_scores[i])[
+            : opt.top_k
+        ]
         true_top_k_ids = {id(candidates[i]) for i in true_top_k_idx}
         proxy_top_ids = {id(g) for g in proxy_top}
 

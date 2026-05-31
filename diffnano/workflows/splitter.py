@@ -248,9 +248,11 @@ class SplitterDesigner:
             heaviside_projection,
         )
 
-        density = torch.rand(
-            self.n_grid, device=self._device, dtype=torch.float64
-        ).detach().requires_grad_(True)
+        density = (
+            torch.rand(self.n_grid, device=self._device, dtype=torch.float64)
+            .detach()
+            .requires_grad_(True)
+        )
 
         opt = torch.optim.Adam([density], lr=lr)
         loss_history = []

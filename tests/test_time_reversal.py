@@ -4,13 +4,9 @@ Validates that the time-reversal adjoint mode produces gradients matching
 pure autograd, uses less memory, and works with realistic figures of merit.
 """
 
-import math
-
-import pytest
 import torch
 
 from diffnano.solvers import FDTDSolver3D
-
 
 # Small grid / few steps for fast CPU tests.
 _CFG = dict(
@@ -229,7 +225,7 @@ class TestResonantArrayFOM:
         result = solver.forward(eps)
 
         # Time-domain FOM: total E-field energy in the grid.
-        energy = (result.field ** 2).sum()
+        energy = (result.field**2).sum()
         energy.backward()
 
         assert eps.grad is not None
@@ -244,7 +240,7 @@ class TestResonantArrayFOM:
         solver_ad = FDTDSolver3D(**_CFG)
         eps_ad = eps_base.clone().detach().requires_grad_(True)
         result_ad = solver_ad.forward(eps_ad)
-        energy_ad = (result_ad.field ** 2).sum()
+        energy_ad = (result_ad.field**2).sum()
         energy_ad.backward()
         grad_ad = eps_ad.grad.clone()
 
@@ -252,7 +248,7 @@ class TestResonantArrayFOM:
         solver_tr = FDTDSolver3D(**_CFG, backward="time_reversal")
         eps_tr = eps_base.clone().detach().requires_grad_(True)
         result_tr = solver_tr.forward(eps_tr)
-        energy_tr = (result_tr.field ** 2).sum()
+        energy_tr = (result_tr.field**2).sum()
         energy_tr.backward()
         grad_tr = eps_tr.grad.clone()
 

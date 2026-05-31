@@ -9,7 +9,6 @@ from diffnano.solvers.backend_diagnostics import (
     generate_operating_regime_table,
 )
 
-
 # ---------------------------------------------------------------------------
 # Minimal test configs to keep runtime short
 # ---------------------------------------------------------------------------
@@ -24,6 +23,7 @@ _MINIMAL_CONFIGS = [_THIN_CFG, _MEDIUM_CFG, _LOSSY_CFG]
 # ---------------------------------------------------------------------------
 # Test 1: diagnose runs on a small config set
 # ---------------------------------------------------------------------------
+
 
 class TestDiagnosticsRuns:
     """BackendDiagnostics.diagnose completes on representative configs."""
@@ -85,15 +85,16 @@ class TestDiagnosticsRuns:
 # Test 2: recommend_backend returns valid structure
 # ---------------------------------------------------------------------------
 
+
 class TestRecommendBackend:
     """BackendDiagnostics.recommend_backend returns a valid recommendation."""
 
     @pytest.mark.parametrize(
         "d_over_lambda,n_orders,loss_tangent",
         [
-            (0.02, 3, 0.0),   # thin, low orders
-            (0.3, 5, 0.0),    # medium
-            (1.0, 8, 0.1),    # thick, some loss
+            (0.02, 3, 0.0),  # thin, low orders
+            (0.3, 5, 0.0),  # medium
+            (1.0, 8, 0.1),  # thick, some loss
             (0.05, 10, 0.5),  # thin but high orders + lossy
         ],
     )
@@ -129,6 +130,7 @@ class TestRecommendBackend:
 # Test 3: benchmark table structure
 # ---------------------------------------------------------------------------
 
+
 class TestBenchmarkTable:
     """BackendBenchmarkTable.run produces correctly structured results."""
 
@@ -141,8 +143,13 @@ class TestBenchmarkTable:
         assert len(results) == 4  # one per backend
 
         required_keys = {
-            "backend", "config_idx", "forward_time_ms", "backward_time_ms",
-            "peak_memory_mb", "forward_error", "gradient_cosine",
+            "backend",
+            "config_idx",
+            "forward_time_ms",
+            "backward_time_ms",
+            "peak_memory_mb",
+            "forward_error",
+            "gradient_cosine",
         }
         for r in results:
             assert required_keys.issubset(r.keys()), f"missing keys: {required_keys - r.keys()}"
@@ -169,6 +176,7 @@ class TestBenchmarkTable:
 # Test 4: operating regime table is complete
 # ---------------------------------------------------------------------------
 
+
 class TestRegimeTable:
     """generate_operating_regime_table returns complete data."""
 
@@ -183,8 +191,12 @@ class TestRegimeTable:
         assert backends_in_table == {"eig", "eig_expm", "matrix_sqrt", "rdit"}
 
         required_keys = {
-            "backend", "d_over_lambda_range", "max_orders",
-            "loss_range", "accuracy_estimate", "failure_boundary",
+            "backend",
+            "d_over_lambda_range",
+            "max_orders",
+            "loss_range",
+            "accuracy_estimate",
+            "failure_boundary",
         }
         for entry in table:
             assert required_keys.issubset(entry.keys()), (
@@ -211,6 +223,7 @@ class TestRegimeTable:
 # ---------------------------------------------------------------------------
 # Test 5: markdown table format
 # ---------------------------------------------------------------------------
+
 
 class TestMarkdownTable:
     """BackendBenchmarkTable.to_markdown_table produces valid markdown."""

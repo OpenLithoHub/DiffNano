@@ -132,9 +132,7 @@ class TestDegeneracyStress:
             loss.backward()
             if not torch.isfinite(eps.grad).all():
                 n_nan += 1
-        assert n_nan == 0, (
-            f"Backend {backend}: {n_nan}/10 seeds produced NaN gradients"
-        )
+        assert n_nan == 0, f"Backend {backend}: {n_nan}/10 seeds produced NaN gradients"
 
 
 class TestThickLayerStability:
@@ -311,9 +309,7 @@ def test_rdit_thin_layer_vs_eig():
     eff_eig = result_eig.field.sort().values
     eff_rdit = result_rdit.field.sort().values
     rel_err = (eff_eig - eff_rdit).abs().max() / (eff_eig.abs().max() + 1e-12)
-    assert rel_err < 0.15, (
-        f"R-DIT vs eig disagreement for thin layer: rel_err={rel_err:.6f}"
-    )
+    assert rel_err < 0.15, f"R-DIT vs eig disagreement for thin layer: rel_err={rel_err:.6f}"
 
 
 def test_rdit_thick_layer_warning():
@@ -406,18 +402,14 @@ def test_four_backend_crosscheck_thin_layer():
     # Between families, the known sqrt-method discrepancy allows ~15%.
 
     # Within-family checks (tight tolerance)
-    eig_vs_eig_expm = (
-        results["eig"] - results["eig_expm"]
-    ).abs().max() / (results["eig"].abs().max() + 1e-12)
-    sqrt_vs_rdit = (
-        results["matrix_sqrt"] - results["rdit"]
-    ).abs().max() / (results["matrix_sqrt"].abs().max() + 1e-12)
-    assert eig_vs_eig_expm < 0.01, (
-        f"eig vs eig_expm mismatch: rel_err={eig_vs_eig_expm:.4f}"
+    eig_vs_eig_expm = (results["eig"] - results["eig_expm"]).abs().max() / (
+        results["eig"].abs().max() + 1e-12
     )
-    assert sqrt_vs_rdit < 0.01, (
-        f"matrix_sqrt vs rdit mismatch: rel_err={sqrt_vs_rdit:.4f}"
+    sqrt_vs_rdit = (results["matrix_sqrt"] - results["rdit"]).abs().max() / (
+        results["matrix_sqrt"].abs().max() + 1e-12
     )
+    assert eig_vs_eig_expm < 0.01, f"eig vs eig_expm mismatch: rel_err={eig_vs_eig_expm:.4f}"
+    assert sqrt_vs_rdit < 0.01, f"matrix_sqrt vs rdit mismatch: rel_err={sqrt_vs_rdit:.4f}"
 
     # Cross-family checks (looser tolerance, known discrepancy)
     for eig_family in ["eig", "eig_expm"]:
@@ -426,8 +418,7 @@ def test_four_backend_crosscheck_thin_layer():
             b = results[sqrt_family]
             rel_err = (a - b).abs().max() / (a.abs().max() + 1e-12)
             assert rel_err < 0.15, (
-                f"Cross-family mismatch {eig_family} vs {sqrt_family}: "
-                f"rel_err={rel_err:.4f}"
+                f"Cross-family mismatch {eig_family} vs {sqrt_family}: rel_err={rel_err:.4f}"
             )
 
 

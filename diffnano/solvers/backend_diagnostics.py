@@ -28,6 +28,7 @@ _ALL_BACKENDS = ("eig", "eig_expm", "matrix_sqrt", "rdit")
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_solver(
     backend: str,
     fourier_orders: int = 5,
@@ -72,6 +73,7 @@ def _cosine_similarity(a: torch.Tensor, b: torch.Tensor) -> float:
 # ---------------------------------------------------------------------------
 # BackendDiagnostics
 # ---------------------------------------------------------------------------
+
 
 class BackendDiagnostics:
     """Diagnostic tool for RCWA backend selection and uncertainty quantification.
@@ -136,7 +138,9 @@ class BackendDiagnostics:
             loss = out.field[:, solver.fourier_orders].sum()
             loss.backward()
             ref_forward.append(out.field.detach().clone())
-            ref_grads.append(geo.grad.detach().clone() if geo.grad is not None else torch.zeros_like(geo))
+            ref_grads.append(
+                geo.grad.detach().clone() if geo.grad is not None else torch.zeros_like(geo)
+            )
 
         # Evaluate each backend vs reference
         for backend in self.backends:
@@ -169,7 +173,9 @@ class BackendDiagnostics:
                 fwd_errors.append(fwd_err)
 
                 # Gradient cosine similarity
-                grad_test = geo.grad.detach().clone() if geo.grad is not None else torch.zeros_like(geo)
+                grad_test = (
+                    geo.grad.detach().clone() if geo.grad is not None else torch.zeros_like(geo)
+                )
                 grad_ref = ref_grads[i]
                 cos = _cosine_similarity(grad_ref, grad_test)
                 grad_cosines.append(cos)
@@ -313,6 +319,7 @@ class BackendDiagnostics:
 # BackendBenchmarkTable
 # ---------------------------------------------------------------------------
 
+
 class BackendBenchmarkTable:
     """Generate benchmark table for RCWA backends.
 
@@ -365,27 +372,31 @@ class BackendBenchmarkTable:
             n_layers = cfg.get("n_layers", 3)
 
             # Reference solver
-            ref_solver = self.solver_factory("eig", fourier_orders=n_orders,
-                                             wavelength_nm=wl, period_nm=period)
-            geo_template = _make_geometry(n_layers=n_layers, n_grid=n_grid,
-                                          loss_tangent=loss_tangent)
+            ref_solver = self.solver_factory(
+                "eig", fourier_orders=n_orders, wavelength_nm=wl, period_nm=period
+            )
+            geo_template = _make_geometry(
+                n_layers=n_layers, n_grid=n_grid, loss_tangent=loss_tangent
+            )
 
             # Reference forward + backward
             geo_ref = geo_template.detach().clone().requires_grad_(True)
             t0 = time.perf_counter()
-            out_ref = ref_solver.forward(geo_ref, wavelengths=[wl],
-                                         source={"thickness_nm": thickness})
-            t_fwd_ref = time.perf_counter() - t0
+            out_ref = ref_solver.forward(
+                geo_ref, wavelengths=[wl], source={"thickness_nm": thickness}
+            )
+            time.perf_counter() - t0
             loss_ref = out_ref.field[:, ref_solver.fourier_orders].sum()
             t0 = time.perf_counter()
             loss_ref.backward()
-            t_bwd_ref = time.perf_counter() - t0
+            time.perf_counter() - t0
             ref_eff = out_ref.field.detach().sort().values
             ref_grad = geo_ref.grad.detach().clone() if geo_ref.grad is not None else None
 
             for backend in _ALL_BACKENDS:
-                solver = self.solver_factory(backend, fourier_orders=n_orders,
-                                             wavelength_nm=wl, period_nm=period)
+                solver = self.solver_factory(
+                    backend, fourier_orders=n_orders, wavelength_nm=wl, period_nm=period
+                )
                 geo = geo_template.detach().clone().requires_grad_(True)
 
                 # Measure memory before
@@ -398,8 +409,7 @@ class BackendBenchmarkTable:
                 # Forward
                 gc.collect()
                 t0 = time.perf_counter()
-                out = solver.forward(geo, wavelengths=[wl],
-                                     source={"thickness_nm": thickness})
+                out = solver.forward(geo, wavelengths=[wl], source={"thickness_nm": thickness})
                 fwd_time = (time.perf_counter() - t0) * 1000  # ms
 
                 # Backward
@@ -427,22 +437,28 @@ class BackendBenchmarkTable:
                 else:
                     grad_cos = float("nan")
 
-                self._results.append({
-                    "backend": backend,
-                    "config_idx": ci,
-                    "forward_time_ms": round(fwd_time, 3),
-                    "backward_time_ms": round(bwd_time, 3),
-                    "peak_memory_mb": round(peak_mem, 4),
-                    "forward_error": round(fwd_err, 6),
-                    "gradient_cosine": round(grad_cos, 6),
-                })
+                self._results.append(
+                    {
+                        "backend": backend,
+                        "config_idx": ci,
+                        "forward_time_ms": round(fwd_time, 3),
+                        "backward_time_ms": round(bwd_time, 3),
+                        "peak_memory_mb": round(peak_mem, 4),
+                        "forward_error": round(fwd_err, 6),
+                        "gradient_cosine": round(grad_cos, 6),
+                    }
+                )
 
         return self._results
 
     def to_markdown_table(self) -> str:
         """Format results as markdown table."""
         if not self._results:
-            return "| backend | config | fwd_ms | bwd_ms | mem_MB | fwd_err | grad_cos |\n|---|---|---|---|---|---|---|\n"
+            return (
+                "| backend | config | fwd_ms | bwd_ms |"
+                " mem_MB | fwd_err | grad_cos |\n"
+                "|---|---|---|---|---|---|---|\n"
+            )
 
         header = "| backend | config | fwd_ms | bwd_ms | mem_MB | fwd_err | grad_cos |"
         sep = "|---|---|---|---|---|---|---|"
@@ -461,6 +477,7 @@ class BackendBenchmarkTable:
 # ---------------------------------------------------------------------------
 # Operating regime table
 # ---------------------------------------------------------------------------
+
 
 def generate_operating_regime_table() -> list[dict]:
     """Generate the canonical operating regime table for all backends.

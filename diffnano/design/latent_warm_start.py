@@ -76,12 +76,15 @@ class ConditionalLatentSampler(nn.Module):
         z_center = self.vae.encode(condition)  # (latent_dim,)
         z_center = z_center.to(self._device)
 
-        noise = torch.randn(
-            n_candidates,
-            self.latent_dim,
-            dtype=torch.float64,
-            device=self._device,
-        ) * perturbation_scale
+        noise = (
+            torch.randn(
+                n_candidates,
+                self.latent_dim,
+                dtype=torch.float64,
+                device=self._device,
+            )
+            * perturbation_scale
+        )
         z_samples = z_center.unsqueeze(0) + noise  # (n_candidates, latent_dim)
 
         candidates = []
@@ -195,9 +198,7 @@ class ConditionalLatentSampler(nn.Module):
         - ``refined``: Tensor ``(top_k, H, W)``
         - ``refined_scores``: Tensor ``(top_k,)``
         """
-        candidates = self.sample_candidates(
-            condition, n_candidates, perturbation_scale
-        )
+        candidates = self.sample_candidates(condition, n_candidates, perturbation_scale)
         refined, _ = self.batch_refine(candidates, fom_fn, refine_steps, lr)
         best, scores, indices = self.score_and_select(refined, fom_fn, top_k)
 
@@ -282,9 +283,7 @@ class WilcoxonComparison:
         for seed in range(n_seeds):
             torch.manual_seed(seed)
 
-            condition = torch.rand(
-                grid_size, grid_size, dtype=torch.float64, device=sampler.device
-            )
+            condition = torch.rand(grid_size, grid_size, dtype=torch.float64, device=sampler.device)
 
             # Warm-start pipeline
             ws_result = sampler.warm_start_optimize(
@@ -307,9 +306,7 @@ class WilcoxonComparison:
                     best_random_fom = fom_val
             random_foms.append(best_random_fom)
 
-        warm_wins = sum(
-            1 for w, r in zip(warm_start_foms, random_foms) if w > r
-        ) / max(n_seeds, 1)
+        warm_wins = sum(1 for w, r in zip(warm_start_foms, random_foms) if w > r) / max(n_seeds, 1)
 
         try:
             _, p_value = wilcoxon(warm_start_foms, random_foms)

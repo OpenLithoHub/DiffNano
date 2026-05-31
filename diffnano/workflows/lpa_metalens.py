@@ -177,7 +177,8 @@ class UnitCellLibrary:
         fractions = idx.unsqueeze(0) / n_grid  # (1, n_grid)
         mask = fractions < params.unsqueeze(1)  # (n_library, n_grid)
         eps_profiles = torch.where(
-            mask, torch.tensor(eps_high, dtype=torch.float64, device=device),
+            mask,
+            torch.tensor(eps_high, dtype=torch.float64, device=device),
             torch.tensor(eps_low, dtype=torch.float64, device=device),
         )
 
@@ -622,7 +623,6 @@ class TwoLevelLPAOptimizer:
         corrected_params : Tensor, shape ``(Nx, Ny)``
         correction_history : list of float
         """
-        device = geometry_params.device
         params = geometry_params.detach().clone().requires_grad_(True)
 
         param_min = self.lpa_forward.library.param_min

@@ -207,9 +207,11 @@ def _sqrt_single(A: torch.Tensor) -> torch.Tensor:
     rows = []
     for i in range(n):
         row = torch.zeros(n, dtype=dtype, device=device)
-        row = row + torch.nn.functional.one_hot(
-            torch.tensor([i], device=device), n
-        ).to(dtype).squeeze() * diag_sqrt[i]
+        row = (
+            row
+            + torch.nn.functional.one_hot(torch.tensor([i], device=device), n).to(dtype).squeeze()
+            * diag_sqrt[i]
+        )
         rows.append(row)
 
     # Now fill above-diagonal entries: for each (i, j) with i < j
@@ -523,8 +525,7 @@ class RCWASolver:
         _valid_backends = ("eig", "eig_expm", "matrix_sqrt", "rdit")
         if solver_backend not in _valid_backends:
             raise ValueError(
-                f"solver_backend must be one of {_valid_backends}, "
-                f"got {solver_backend!r}"
+                f"solver_backend must be one of {_valid_backends}, got {solver_backend!r}"
             )
         self.solver_backend = solver_backend
         self.taylor_order = taylor_order
@@ -649,15 +650,31 @@ class RCWASolver:
 
         if self.solver_backend == "rdit":
             return self._forward_1d_rdit(
-                P, n_layers, n_wl, n,
-                k0_all, layer_thickness, wavelengths, polarization, theta,
-                device, dtype,
+                P,
+                n_layers,
+                n_wl,
+                n,
+                k0_all,
+                layer_thickness,
+                wavelengths,
+                polarization,
+                theta,
+                device,
+                dtype,
             )
         elif self.solver_backend == "matrix_sqrt":
             return self._forward_1d_matrix_sqrt(
-                P, n_layers, n_wl, n,
-                k0_all, layer_thickness, wavelengths, polarization, theta,
-                device, dtype,
+                P,
+                n_layers,
+                n_wl,
+                n,
+                k0_all,
+                layer_thickness,
+                wavelengths,
+                polarization,
+                theta,
+                device,
+                dtype,
             )
         else:
             # eig and eig_expm both need eigendecomposition
@@ -668,15 +685,33 @@ class RCWASolver:
 
             if self.solver_backend == "eig":
                 return self._forward_1d_eig(
-                    eigenvalues, eigenvectors, n_layers, n_wl, n,
-                    k0_all, layer_thickness, wavelengths, polarization, theta,
-                    device, dtype,
+                    eigenvalues,
+                    eigenvectors,
+                    n_layers,
+                    n_wl,
+                    n,
+                    k0_all,
+                    layer_thickness,
+                    wavelengths,
+                    polarization,
+                    theta,
+                    device,
+                    dtype,
                 )
             else:  # eig_expm
                 return self._forward_1d_eig_expm(
-                    eigenvalues, eigenvectors, n_layers, n_wl, n,
-                    k0_all, layer_thickness, wavelengths, polarization, theta,
-                    device, dtype,
+                    eigenvalues,
+                    eigenvectors,
+                    n_layers,
+                    n_wl,
+                    n,
+                    k0_all,
+                    layer_thickness,
+                    wavelengths,
+                    polarization,
+                    theta,
+                    device,
+                    dtype,
                 )
 
     def _forward_1d_eig(
@@ -918,8 +953,8 @@ class RCWASolver:
         # eigenvectors: (n_wl, n_layers, n, n) -> flatten for batch solve
         evecs_flat = eigenvectors.reshape(n_wl * n_layers, n, n)
         # Use solve for batched inverse: V^{-1} = solve(V, I)
-        I_batch = torch.eye(n, dtype=dtype, device=device).unsqueeze(0).expand(
-            n_wl * n_layers, -1, -1
+        I_batch = (
+            torch.eye(n, dtype=dtype, device=device).unsqueeze(0).expand(n_wl * n_layers, -1, -1)
         )
         inv_evecs_flat = torch.linalg.solve(evecs_flat, I_batch)
         inv_eigenvectors = inv_evecs_flat.reshape(n_wl, n_layers, n, n)
