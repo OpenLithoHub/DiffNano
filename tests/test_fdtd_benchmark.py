@@ -9,7 +9,6 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
 import torch
 
 from diffnano.solvers.fdtd3d import FDTDSolver3D
@@ -20,7 +19,6 @@ from diffnano.solvers.fdtd_benchmark import (
     FDTDBenchmarkSuite,
     SystolicUpdateEvaluator,
 )
-
 
 _SMALL_GRID = (8, 8, 8)
 _SMALL_STEPS = 6

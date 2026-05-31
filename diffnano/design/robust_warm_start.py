@@ -10,12 +10,13 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 import torch.nn as nn
 from torch import Tensor
-from typing import Optional, List, Dict, Tuple, Callable
 
-from diffnano.design.latent_warm_start import ConditionalLatentSampler, StrehlScorer
+from diffnano.design.latent_warm_start import ConditionalLatentSampler
 from diffnano.design.robustness.subspace import MultiAxisPerturbation
 
 __all__ = [
@@ -35,7 +36,7 @@ class AngleSweepScorer:
     def __init__(
         self,
         base_scorer: Callable[[Tensor, Tensor], Tensor],
-        angle_range: Tuple[float, float] = (-30.0, 30.0),
+        angle_range: tuple[float, float] = (-30.0, 30.0),
         n_angles: int = 7,
     ):
         self.base_scorer = base_scorer
@@ -45,10 +46,13 @@ class AngleSweepScorer:
     def _angle_conditions(
         self,
         condition: Tensor,
-    ) -> List[Tensor]:
+    ) -> list[Tensor]:
         """Generate perturbed condition tensors for each angle in the sweep."""
         lo, hi = self.angle_range
-        angles = torch.linspace(lo, hi, self.n_angles, dtype=condition.dtype, device=condition.device)
+        angles = torch.linspace(
+            lo, hi, self.n_angles,
+            dtype=condition.dtype, device=condition.device,
+        )
         conditions = []
         for angle in angles:
             cond = condition.clone()
@@ -79,7 +83,7 @@ class AngleSweepScorer:
         design: Tensor,
         condition: Tensor,
         n_mc: int = 16,
-    ) -> Tuple[Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor]:
         """Score with uncertainty bands via MC sampling over angle perturbations.
 
         Returns
@@ -120,7 +124,7 @@ class ProcessCornerWarmStart:
     def __init__(
         self,
         fom_fn: Callable[[Tensor], Tensor],
-        perturbation: Optional[MultiAxisPerturbation] = None,
+        perturbation: MultiAxisPerturbation | None = None,
         n_corners: int = 8,
         corner_sigma_scale: float = 2.0,
     ):
@@ -154,8 +158,8 @@ class ProcessCornerWarmStart:
     def score(
         self,
         design: Tensor,
-        condition: Optional[Tensor] = None,
-        n_corners: Optional[int] = None,
+        condition: Tensor | None = None,
+        n_corners: int | None = None,
     ) -> Tensor:
         """Score a design by worst-case FoM across process corners.
 
@@ -193,7 +197,7 @@ class RobustPosteriorWarmStart(nn.Module):
         latent_sampler: ConditionalLatentSampler,
         robust_scorer: Callable[[Tensor, Tensor], Tensor],
         n_candidates: int = 16,
-        quantize_fn: Optional[Callable[[Tensor], Tensor]] = None,
+        quantize_fn: Callable[[Tensor], Tensor] | None = None,
     ):
         super().__init__()
         self.latent_sampler = latent_sampler
@@ -209,8 +213,8 @@ class RobustPosteriorWarmStart(nn.Module):
     def sample_robust(
         self,
         condition: Tensor,
-        n_candidates: Optional[int] = None,
-    ) -> Dict[str, Tensor]:
+        n_candidates: int | None = None,
+    ) -> dict[str, Tensor]:
         """Sample candidates and score by worst-case robust FoM.
 
         Returns
@@ -242,9 +246,9 @@ class RobustPosteriorWarmStart(nn.Module):
     def sample_with_decision_gate(
         self,
         condition: Tensor,
-        n_candidates: Optional[int] = None,
-        decision_gate: Optional[Callable[[Tensor, Tensor], Tuple[Tensor, Tensor]]] = None,
-    ) -> Dict[str, Tensor]:
+        n_candidates: int | None = None,
+        decision_gate: Callable[[Tensor, Tensor], tuple[Tensor, Tensor]] | None = None,
+    ) -> dict[str, Tensor]:
         """Sample candidates, score robustly, then apply a decision gate.
 
         The decision_gate callable receives (scores, candidates) and returns
@@ -283,7 +287,7 @@ class RobustPosteriorWarmStart(nn.Module):
         fom_fn: Callable[[Tensor], Tensor],
         n_seeds: int = 5,
         n_candidates: int = 10,
-    ) -> Dict[str, list]:
+    ) -> dict[str, list]:
         """Statistical comparison: robust-scored vs nominal-scored selection.
 
         For each seed, generates candidates, picks best by robust score and

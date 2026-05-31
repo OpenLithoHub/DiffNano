@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-from typing import Optional, Tuple
-
 
 __all__ = [
     "StraightThroughQuantize",
@@ -85,7 +83,7 @@ class QuantizationNoiseGuardrail:
         x: torch.Tensor,
         grad: torch.Tensor,
         loss_fn,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Return (direction_cosine, at_boundary) diagnostic tuple."""
         fd = torch.zeros_like(x)
         x_flat = x.detach().flatten()
@@ -121,8 +119,8 @@ class QuantizedOptimizer:
 
     def __init__(
         self,
-        grid_shape: Tuple[int, int] = (16, 16),
-        quantizer: Optional[nn.Module] = None,
+        grid_shape: tuple[int, int] = (16, 16),
+        quantizer: nn.Module | None = None,
         lr: float = 0.05,
         n_steps: int = 50,
         device: str = "cpu",
@@ -138,7 +136,7 @@ class QuantizedOptimizer:
         fom_fn,
         seed: int,
         quantize_aware: bool,
-    ) -> Tuple[torch.Tensor, float]:
+    ) -> tuple[torch.Tensor, float]:
         torch.manual_seed(seed)
         x = torch.rand(
             *self.grid_shape, dtype=torch.float64, device=self.device, requires_grad=True

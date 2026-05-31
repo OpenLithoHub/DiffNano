@@ -16,9 +16,10 @@ from __future__ import annotations
 import gc
 import json
 import time
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import torch
 from torch import Tensor
@@ -34,11 +35,11 @@ __all__ = [
 
 @dataclass
 class BenchmarkConfig:
-    grid_sizes: List[Tuple[int, int, int]] = dc_field(
+    grid_sizes: list[tuple[int, int, int]] = dc_field(
         default_factory=lambda: [(16, 16, 16), (32, 32, 32)]
     )
     n_time_steps: int = 100
-    backward_modes: List[str] = dc_field(
+    backward_modes: list[str] = dc_field(
         default_factory=lambda: ["time_reversal", "checkpoint", "autograd"]
     )
     device: str = "cpu"
@@ -46,16 +47,16 @@ class BenchmarkConfig:
 
 @dataclass
 class BenchmarkResult:
-    grid_size: Tuple[int, int, int]
+    grid_size: tuple[int, int, int]
     backward_mode: str
     forward_time_ms: float
     backward_time_ms: float
     peak_memory_mb: float
-    gradient_cosine_vs_autograd: Optional[float]
+    gradient_cosine_vs_autograd: float | None
     device: str
 
 
-def _resolve_device(requested: str) -> Tuple[str, str]:
+def _resolve_device(requested: str) -> tuple[str, str]:
     if requested == "cuda":
         if torch.cuda.is_available():
             return "cuda", "GPU (CUDA)"
@@ -63,7 +64,7 @@ def _resolve_device(requested: str) -> Tuple[str, str]:
     return "cpu", "CPU"
 
 
-def _make_eps_grid(grid_size: Tuple[int, int, int], device: str) -> Tensor:
+def _make_eps_grid(grid_size: tuple[int, int, int], device: str) -> Tensor:
     D, H, W = grid_size
     torch.manual_seed(42)
     eps = 1.5 + 1.0 * torch.rand(D, H, W, dtype=torch.float64, device=device)
@@ -90,19 +91,19 @@ class FDTDBenchmarkSuite:
     """
 
     def __init__(self) -> None:
-        self._results: List[BenchmarkResult] = []
+        self._results: list[BenchmarkResult] = []
 
     def run(
         self,
         fdtd3d_class: type,
         config: BenchmarkConfig,
-    ) -> List[BenchmarkResult]:
+    ) -> list[BenchmarkResult]:
         effective_device, _ = _resolve_device(config.device)
         self._results = []
 
         for grid_size in config.grid_sizes:
             eps_template = _make_eps_grid(grid_size, effective_device)
-            autograd_grad: Optional[Tensor] = None
+            autograd_grad: Tensor | None = None
 
             for mode in config.backward_modes:
                 gc.collect()
@@ -113,7 +114,7 @@ class FDTDBenchmarkSuite:
                 else:
                     mem_before = 0
 
-                bw_kw: Dict[str, Any] = {}
+                bw_kw: dict[str, Any] = {}
                 if mode == "time_reversal":
                     bw_kw["backward"] = "time_reversal"
                 elif mode == "checkpoint":
@@ -154,7 +155,7 @@ class FDTDBenchmarkSuite:
                 else:
                     peak_mb = _estimate_cpu_peak_mb(eps, config.n_time_steps, grid_size)
 
-                cos_vs_ad: Optional[float] = None
+                cos_vs_ad: float | None = None
                 if mode == "autograd":
                     autograd_grad = grad
                 elif autograd_grad is not None:
@@ -206,7 +207,7 @@ class FDTDBenchmarkSuite:
 def _estimate_cpu_peak_mb(
     eps: Tensor,
     n_steps: int,
-    grid_size: Tuple[int, int, int],
+    grid_size: tuple[int, int, int],
 ) -> float:
     D, H, W = grid_size
     bytes_per = 8
@@ -228,7 +229,7 @@ class ExternalCrossValidator:
         our_result: Tensor,
         external_result: Tensor,
         rtol: float = 1e-3,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         diff = our_result.detach().to(torch.float64) - external_result.detach().to(torch.float64)
         ref_norm = external_result.detach().to(torch.float64).norm().item()
         max_abs = diff.abs().max().item()
@@ -244,7 +245,7 @@ class ExternalCrossValidator:
         our_grad: Tensor,
         external_grad: Tensor,
         cosine_threshold: float = 0.99,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         cos_sim = _cosine_sim(our_grad, external_grad)
         ref_norm = external_grad.detach().to(torch.float64).norm().item()
         diff_norm = (
@@ -259,10 +260,10 @@ class ExternalCrossValidator:
 
     def generate_test_case(
         self,
-        grid_size: Tuple[int, int, int] = (16, 16, 16),
-        source_pos: Optional[Tuple[int, int, int]] = None,
+        grid_size: tuple[int, int, int] = (16, 16, 16),
+        source_pos: tuple[int, int, int] | None = None,
         freq: float = 1.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         D, H, W = grid_size
         if source_pos is None:
             source_pos = (D // 2, H // 2, W // 2)
@@ -289,12 +290,12 @@ class ExternalCrossValidator:
         }
 
     @staticmethod
-    def load_external_results(path: str) -> Dict[str, Any]:
+    def load_external_results(path: str) -> dict[str, Any]:
         p = Path(path)
-        with open(p, "r") as f:
+        with open(p) as f:
             raw = json.load(f)
 
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         for key in ("field", "gradient"):
             if key in raw:
                 entry = raw[key]
@@ -320,10 +321,10 @@ class SystolicUpdateEvaluator:
     def measure_bandwidth(
         self,
         fdtd3d_instance: Any,
-        grid_size: Tuple[int, int, int],
+        grid_size: tuple[int, int, int],
         n_warmup: int = 2,
         n_trials: int = 5,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         D, H, W = grid_size
         dev = getattr(fdtd3d_instance, "_device", torch.device("cpu"))
         dtype = torch.float64

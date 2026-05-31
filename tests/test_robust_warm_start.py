@@ -1,16 +1,15 @@
 """Tests for robust posterior warm start (N9.3)."""
 
-import pytest
 import torch
 
 from diffnano.design.latent_warm_start import ConditionalLatentSampler
 from diffnano.design.quantized import BinarySTE, StraightThroughQuantize
+from diffnano.design.representation_learning import LearnedRepresentation
 from diffnano.design.robust_warm_start import (
     AngleSweepScorer,
     ProcessCornerWarmStart,
     RobustPosteriorWarmStart,
 )
-from diffnano.design.representation_learning import LearnedRepresentation
 
 
 def _make_base_scorer(angle_sensitive: bool = False):
@@ -77,14 +76,16 @@ class TestAngleSweepScorer:
 
 class TestProcessCornerWarmStart:
     def test_produces_scalar_score(self):
-        fom_fn = lambda x: x.sum() * 0.01
+        def fom_fn(x):
+            return x.sum() * 0.01
         pc = ProcessCornerWarmStart(fom_fn=fom_fn, n_corners=4)
         design = torch.rand(8, 8, dtype=torch.float64)
         score = pc.score(design)
         assert score.dim() == 0
 
     def test_score_varies_with_design(self):
-        fom_fn = lambda x: x.sum()
+        def fom_fn(x):
+            return x.sum()
         pc = ProcessCornerWarmStart(fom_fn=fom_fn, n_corners=4)
         d1 = torch.ones(8, 8, dtype=torch.float64) * 0.3
         d2 = torch.ones(8, 8, dtype=torch.float64) * 0.9
@@ -193,7 +194,8 @@ class TestQuantizedRobustIntegration:
             assert set(quantized.unique().tolist()) <= {0.0, 1.0}
 
     def test_binary_ste_with_process_corner(self):
-        fom_fn = lambda x: x.sum()
+        def fom_fn(x):
+            return x.sum()
         pc = ProcessCornerWarmStart(fom_fn=fom_fn, n_corners=4)
         ste = BinarySTE()
         design = torch.rand(8, 8, dtype=torch.float64)

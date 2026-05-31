@@ -76,7 +76,8 @@ class TestQuantizationNoiseGuardrail:
     def test_consistent_gradient_direction(self):
         guard = QuantizationNoiseGuardrail()
         x = torch.tensor([0.2, 0.8], dtype=torch.float64, requires_grad=True)
-        loss_fn = lambda t: -(t**2).sum()
+        def loss_fn(t):
+            return -(t**2).sum()
         loss = loss_fn(x)
         loss.backward()
         cosine, at_boundary = guard.check(x, x.grad, loss_fn)
@@ -85,7 +86,8 @@ class TestQuantizationNoiseGuardrail:
     def test_boundary_relaxed_tolerance(self):
         guard = QuantizationNoiseGuardrail(boundary_tolerance=0.3)
         x = torch.tensor([0.49, 0.51], dtype=torch.float64, requires_grad=True)
-        loss_fn = lambda t: -(t**2).sum()
+        def loss_fn(t):
+            return -(t**2).sum()
         loss = loss_fn(x)
         loss.backward()
         _, at_boundary = guard.check(x, x.grad, loss_fn)
@@ -127,7 +129,7 @@ class TestQuantizedOptimizer:
 class TestIntegration:
     def test_quantized_with_heaviside_projection(self):
         q = StraightThroughQuantize(n_levels=2)
-        b = BinarySTE()
+        BinarySTE()
         x = torch.rand(8, 8, dtype=torch.float64, requires_grad=True)
         xq = q(x)
         projected = heaviside_projection(xq, beta=10.0)

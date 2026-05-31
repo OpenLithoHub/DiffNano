@@ -1,4 +1,4 @@
-"""Design parameterization, projection, constraint, mask, latent warm-start, and quantization modules."""
+"""Design parameterization, projection, constraint, mask, latent warm-start, and quantization."""
 
 from diffnano.design.quantized import (
     BinarySTE,
