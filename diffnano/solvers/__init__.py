@@ -29,6 +29,11 @@ __all__ = [
     "DifferentiableResistModel",
     "gmres_matfree",
     "fdfd_fixed_point_gradient",
+    "FDTDBenchmarkSuite",
+    "ExternalCrossValidator",
+    "SystolicUpdateEvaluator",
+    "BenchmarkConfig",
+    "BenchmarkResult",
 ]
 
 
@@ -124,4 +129,14 @@ def __getattr__(name):
         from diffnano.solvers.implicit_diff import fdfd_fixed_point_gradient
 
         return fdfd_fixed_point_gradient
+    if name in (
+        "FDTDBenchmarkSuite",
+        "ExternalCrossValidator",
+        "SystolicUpdateEvaluator",
+        "BenchmarkConfig",
+        "BenchmarkResult",
+    ):
+        from diffnano.solvers import fdtd_benchmark
+
+        return getattr(fdtd_benchmark, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
