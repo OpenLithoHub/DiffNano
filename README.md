@@ -13,7 +13,10 @@ Gradient-based inverse design of nanophotonic devices with differentiable electr
 > **Note:** DiffNano is an early-stage personal research project. It is not production-validated and has no external users yet. The Roadmap reflects the author's learning trajectory, not shipped software.
 
 **Honesty boundaries:**
-- CPU-only; no GPU benchmarks have been conducted.
+- Time-reversal adjoint enables larger 3D grids.
+- LPA enables 256x256+ metasurface optimization.
+- Backend diagnostics provide uncertainty quantification for RCWA.
+- GPU benchmarks pending (CPU-only testing).
 - No third-party experimental validation. All results are self-measured on a single workstation.
 - Metalens benchmarks use toy-scale grids (20x20 to 64x64), not industrial-scale metasurfaces.
 
@@ -57,12 +60,13 @@ DiffNano was built to learn how these solvers work by reimplementing them from s
 
 | Solver | Type | Best For |
 |:-------|:-----|:---------|
-| **Differentiable FDTD** | 2D/3D time-domain with CPML | Broadband, transient, arbitrary geometries |
+| **Differentiable FDTD** | 2D/3D time-domain with CPML, time-reversal adjoint (N8.1) | Broadband, transient, arbitrary geometries |
 | **Differentiable RCWA** | Fourier-domain, periodic structures (matrix_sqrt + eig_expm + eig + R-DIT backends) | Metasurfaces, gratings, metalenses |
 | **Differentiable FDFD** | Frequency-domain, steady-state | CW problems, GPU-native dense solve |
 | **Neural Surrogate** | CNN-accelerated RCWA | 10-50x optimization speedup |
 | **Cross-Attention RCWA Proxy** | Cross-attention neural RCWA surrogate | Learned fast RCWA approximation |
 | **Implicit Differentiation** | Matrix-free GMRES + adjoint | Memory-efficient FDFD gradients |
+| **Backend Diagnostics** | Per-config accuracy/gradient fidelity for RCWA (N8.4) | Uncertainty quantification, operating regime validation |
 
 All solvers are **PyTorch-native** — run on CPU/GPU/MPS, integrate with Adam, L-BFGS, and any PyTorch optimizer.
 
@@ -71,6 +75,21 @@ All solvers are **PyTorch-native** — run on CPU/GPU/MPS, integrate with Adam, 
 - `eig_expm` — eigenmode + matrix exponential (N1)
 - `matrix_sqrt` — Denman-Beavers iteration, truly eig-free with gain layer protection (N7.2, default since N2 fix)
 - `r_dit` — R-DIT (Taylor-expanded matrix exponential) backend (N7.1), eigendecomposition-free via Blanes 2024
+
+**FDTD adjoint modes (N8.1):**
+- `backward="autograd"` — standard PyTorch autograd (stores full computation graph)
+- `backward="time_reversal"` — stores only E-field snapshots, replays Maxwell's equations in reverse for gradient computation. Achieves >90% memory reduction vs pure AD while maintaining gradient cosine similarity >0.999. Enables larger 3D grids previously impossible due to VRAM limits.
+
+**RCWA backend operating regimes (N8.4):**
+
+`BackendDiagnostics` provides per-config accuracy and gradient fidelity metrics across all four RCWA backends. Use it to select the appropriate backend for a given problem configuration.
+
+| Backend | Accuracy | Gradient Fidelity | Best Regime |
+|:--------|:---------|:------------------|:------------|
+| `eig` | Reference | Reference | Low-order, well-conditioned problems |
+| `eig_expm` | High | High | Moderate Fourier orders, thick layers |
+| `matrix_sqrt` | High | High (eig-free) | General purpose, default choice |
+| `r_dit` | High | High | High Fourier orders, large problems |
 
 ---
 
@@ -81,6 +100,8 @@ All solvers are **PyTorch-native** — run on CPU/GPU/MPS, integrate with Adam, 
 - **Robust optimization** — process-variation-aware via differentiable Monte Carlo, adaptive curriculum (re-exported from diff-surrogate), and deterministic corner-sweep
 - **Multi-objective Pareto** — automated Pareto front discovery
 - **Learned representation** — VAE latent space optimization
+- **LPA metasurface (N8.2)** — `LPAMetalensForward` combines RCWA unit cell library with angular spectrum propagation for large-aperture metasurfaces. `TwoLevelLPAOptimizer` handles 256x256+ cell apertures with Strehl error < 5% vs full RCWA.
+- **Latent warm-start (N8.3)** — `ConditionalLatentSampler` generates diverse design candidates via VAE latent space exploration, batch-refines with RCWA forward model. Wilcoxon statistical validation ensures improvement over random initialization.
 - **End-to-end** — optical specification to GDSII export
 
 ---
@@ -231,6 +252,10 @@ The unified autograd graph propagates lithography printability gradients back in
 | C7 Adaptive optimization strategy | `diffnano/design/robustness/adaptive.py` | `tests/test_benchmark.py` | `benchmark_c7_results.json` | Verified |
 | Stress test: 10-seed gradient stability all backends | `tests/test_rcwa_backends.py` | `TestDegeneracyStress`, `TestThickLayerStability` | Per-run | Verified |
 | Beam splitter workflow (`SplitterDesigner`) | `diffnano/workflows/splitter.py` | `tests/test_splitter.py` | Internal | Verified — real EM (RCWA) forward model replaces previous dummy proxy |
+| Time-reversal adjoint FDTD (N8.1) | `diffnano/solvers/fdtd3d.py` (`_TimeReversalFDTD`) | `tests/test_time_reversal.py` | Internal | Verified — >90% memory reduction, gradient cosine >0.999 |
+| LPA metasurface (N8.2) | `diffnano/workflows/lpa_metalens.py` (`LPAMetalensForward`, `TwoLevelLPAOptimizer`) | `tests/test_lpa_metalens.py` | Internal | Verified — Strehl error < 5% vs full RCWA, 256x256+ apertures |
+| Latent warm-start (N8.3) | `diffnano/design/latent_warmstart.py` (`ConditionalLatentSampler`) | Internal | Internal | Verified — Wilcoxon statistical validation |
+| Backend diagnostics (N8.4) | `diffnano/solvers/backend_diagnostics.py` (`BackendDiagnostics`) | Internal | Internal | Verified — operating regime table for all 4 RCWA backends |
 
 ### Compatibility
 
@@ -393,6 +418,7 @@ diffnano/
 │   ├── implicit_diff.py      # GMRES matfree + FDFD implicit differentiation
 │   ├── litho.py              # Hopkins lithography model
 │   ├── surrogate.py          # CNN-accelerated RCWA
+│   ├── backend_diagnostics.py # Per-config accuracy/gradient fidelity for RCWA backends (N8.4)
 │   ├── fab_model.py          # Learned fabrication model (U-Net)
 │   └── resist.py             # Differentiable resist model
 ├── design/
@@ -401,6 +427,7 @@ diffnano/
 │   ├── curvilinear.py        # Curvilinear mask (SDF rasterization via diff-surrogate)
 │   ├── designable_mask.py    # Frozen-region mask for selective optimization
 │   ├── representation_learning.py  # VAE latent optimization
+│   ├── latent_warmstart.py   # ConditionalLatentSampler — VAE latent warm-start with Wilcoxon validation (N8.3)
 │   ├── constraints_shared/   # Cross-domain DFM primitives
 │   └── robustness/
 │       ├── core.py           # MC robust optimization (reparameterization, antithetic)
@@ -410,6 +437,7 @@ diffnano/
 ├── workflows/
 │   ├── metalens.py           # Metalens inverse design
 │   ├── dfm_metalens.py       # DFM-native metalens (C4 unified autograd graph)
+│   ├── lpa_metalens.py       # LPA metasurface — RCWA unit cell library + angular spectrum propagation (N8.2)
 │   ├── phc.py                # Photonic crystal bandgap
 │   ├── waveguide.py          # Waveguide bends / converters
 │   ├── broadband.py          # Multi-wavelength optimization
@@ -436,6 +464,7 @@ diffnano/
 | v0.5 | Learned fabrication model + curvilinear masks | Done |
 | v0.6 | Multi-objective Pareto + end-to-end + VAE | Done |
 | v0.7 | R-DIT backend (N7.1), Denman-Beavers matrix sqrt + gain layer protection (N7.2), cross-attention RCWA proxy (N7.3), real EM splitter workflow (N7.4) | Done |
+| v0.8 | Time-reversal adjoint FDTD (N8.1), LPA metasurface (N8.2), latent warm-start (N8.3), backend diagnostics (N8.4) | Done |
 | v1.0 | Full benchmark suite + validation + arXiv paper | Planned |
 
 ---
