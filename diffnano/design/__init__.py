@@ -1,4 +1,4 @@
-"""Design parameterization, projection, constraint, mask, latent warm-start, quantization, and latent diffusion."""
+"""Design parameterization, projection, constraint, mask, latent warm-start, quantization, latent diffusion, and multi-fidelity."""
 
 from diffnano.design.latent_diffusion import (
     ConditionedDiffusion,
@@ -7,6 +7,12 @@ from diffnano.design.latent_diffusion import (
     LatentDiffusionDesigner,
     LatentEncoder,
     PhysicsGuidance,
+)
+from diffnano.design.multifidelity import (
+    FidelityOracle,
+    FoundryConstraints,
+    MultiFidelityDesignBenchmark,
+    MultiFidelityDesigner,
 )
 from diffnano.design.quantized import (
     BinarySTE,
@@ -34,4 +40,8 @@ __all__ = [
     "ConditionedDiffusion",
     "LatentDiffusionDesigner",
     "LatentDiffusionBenchmark",
+    "FoundryConstraints",
+    "FidelityOracle",
+    "MultiFidelityDesigner",
+    "MultiFidelityDesignBenchmark",
 ]
