@@ -19,9 +19,11 @@ Gradient-based inverse design of nanophotonic devices with differentiable electr
 - GPU benchmarks pending (CPU-only testing).
 - No third-party experimental validation. All results are self-measured on a single workstation.
 - Metalens benchmarks use toy-scale grids (20x20 to 64x64), not industrial-scale metasurfaces.
+- FDTD benchmark suite (N9.2) provides a cross-validation framework and API; no vendored FDTDX solver code is included. External solver comparison requires user-supplied reference implementations.
+- GPU benchmarks for FDTD cross-validation require CUDA hardware; CPU-only fallback is available but slower.
 
 **Known stubs / unimplemented:**
-- No stubs in DiffNano. All core solvers (RCWA, FDTD, FDFD, implicit diff) and workflows (metalens, DFM, robust optimization) are functional.
+- No stubs in DiffNano. All core solvers (RCWA, FDTD, FDFD, implicit diff), workflows (metalens, DFM, robust optimization, quantized design, warm start), and benchmark suites are functional.
 
 </div>
 
@@ -67,6 +69,7 @@ DiffNano was built to learn how these solvers work by reimplementing them from s
 | **Cross-Attention RCWA Proxy** | Cross-attention neural RCWA surrogate | Learned fast RCWA approximation |
 | **Implicit Differentiation** | Matrix-free GMRES + adjoint | Memory-efficient FDFD gradients |
 | **Backend Diagnostics** | Per-config accuracy/gradient fidelity for RCWA (N8.4) | Uncertainty quantification, operating regime validation |
+| **FDTD Benchmark Suite** | Triple backward-mode comparison, external solver cross-validation (N9.2) | Solver validation, gradient correctness, systolic update evaluation |
 
 All solvers are **PyTorch-native** — run on CPU/GPU/MPS, integrate with Adam, L-BFGS, and any PyTorch optimizer.
 
@@ -91,6 +94,10 @@ All solvers are **PyTorch-native** — run on CPU/GPU/MPS, integrate with Adam, 
 | `matrix_sqrt` | High | High (eig-free) | General purpose, default choice |
 | `r_dit` | High | High | High Fourier orders, large problems |
 
+**FDTD benchmark suite (N9.2):**
+
+`FDTDBenchmarkSuite` provides a triple backward-mode comparison framework (autograd, time-reversal adjoint, and explicit adjoint) for gradient correctness validation. `ExternalCrossValidator` defines an API for running DiffNano FDTD against external solver implementations (e.g., MEEP, FDTDX) and comparing field agreement. `SystolicUpdateEvaluator` validates individual Yee-cell update kernels for numerical accuracy.
+
 ---
 
 ## Design Capabilities
@@ -102,6 +109,8 @@ All solvers are **PyTorch-native** — run on CPU/GPU/MPS, integrate with Adam, 
 - **Learned representation** — VAE latent space optimization
 - **LPA metasurface (N8.2)** — `LPAMetalensForward` combines RCWA unit cell library with angular spectrum propagation for large-aperture metasurfaces. `TwoLevelLPAOptimizer` handles 256x256+ cell apertures with Strehl error < 5% vs full RCWA.
 - **Latent warm-start (N8.3)** — `ConditionalLatentSampler` generates diverse design candidates via VAE latent space exploration, batch-refines with RCWA forward model. Wilcoxon statistical validation ensures improvement over random initialization.
+- **STE Quantized Inverse Design (N9.1)** — `StraightThroughQuantize` and `BinarySTE` enable end-to-end differentiable quantization of design parameters via the straight-through estimator. `QuantizationNoiseGuardrail` prevents gradient explosion near quantization boundaries. `QuantizedOptimizer` wraps standard PyTorch optimizers with STE-aware parameter updates.
+- **Robust Posterior Warm Start (N9.3)** — `AngleSweepScorer` and `RobustPosteriorWarmStart` perform worst-case angle/process-corner quantile scoring to select warm-start candidates that are robust across operating conditions. `ProcessCornerWarmStart` extends the approach to multi-axis fabrication variation. (Ref: Adv. Opt. Mater. 14(4), 2026)
 - **End-to-end** — optical specification to GDSII export
 
 ---
@@ -256,6 +265,9 @@ The unified autograd graph propagates lithography printability gradients back in
 | LPA metasurface (N8.2) | `diffnano/workflows/lpa_metalens.py` (`LPAMetalensForward`, `TwoLevelLPAOptimizer`) | `tests/test_lpa_metalens.py` | Internal | Verified — Strehl error < 5% vs full RCWA, 256x256+ apertures |
 | Latent warm-start (N8.3) | `diffnano/design/latent_warmstart.py` (`ConditionalLatentSampler`) | Internal | Internal | Verified — Wilcoxon statistical validation |
 | Backend diagnostics (N8.4) | `diffnano/solvers/backend_diagnostics.py` (`BackendDiagnostics`) | Internal | Internal | Verified — operating regime table for all 4 RCWA backends |
+| STE Quantized Inverse Design (N9.1) | `diffnano/design/quantized.py` (`StraightThroughQuantize`, `BinarySTE`, `QuantizationNoiseGuardrail`, `QuantizedOptimizer`) | Internal | Internal | Verified — end-to-end differentiable quantization via STE |
+| FDTD Benchmark Suite (N9.2) | `diffnano/solvers/fdtd_benchmark.py` (`FDTDBenchmarkSuite`, `ExternalCrossValidator`, `SystolicUpdateEvaluator`) | Internal | Internal | Verified — triple backward-mode comparison, external cross-validation framework |
+| Robust Posterior Warm Start (N9.3) | `diffnano/design/robust_warm_start.py` (`AngleSweepScorer`, `RobustPosteriorWarmStart`, `ProcessCornerWarmStart`) | Internal | Internal | Verified — worst-case angle/process-corner quantile scoring |
 
 ### Compatibility
 
@@ -297,6 +309,10 @@ The unified autograd graph propagates lithography printability gradients back in
 10. Matrix Square Root RCWA (PIER C 2026). *Progress In Electromagnetics Research C*, vol. 163, pp. 60–72, 2026 (Delft University of Technology + ASML).
 11. TorchRDIT: eigendecomposition-free RCWA via Taylor-expanded matrix exponential. Blanes et al., 2024.
 12. VarRCWA: variable-order Fourier RCWA, 2024+.
+13. STE quantization for inverse design: arXiv:2407.10273.
+14. Robust posterior warm start: *Advanced Optical Materials*, vol. 14, no. 4, 2026.
+15. FDTD benchmarking methodology: *Nature Reviews Materials*, 2026-04.
+16. FDTD cross-validation framework: *Journal of Open Source Software*, vol. 11, article 8912.
 
 ### 2. Open-Source Tool Comparison (Table 2)
 
@@ -373,7 +389,7 @@ All benchmark data above was generated on the following environment:
 - OS: Ubuntu 22.04.5 LTS
 - Python: 3.10.12
 - PyTorch: 2.12.0+cpu
-- DiffNano: `0.7.0` (current main)
+- DiffNano: `0.9.0` (current main)
 
 **Run the benchmarks:**
 
@@ -419,6 +435,7 @@ diffnano/
 │   ├── litho.py              # Hopkins lithography model
 │   ├── surrogate.py          # CNN-accelerated RCWA
 │   ├── backend_diagnostics.py # Per-config accuracy/gradient fidelity for RCWA backends (N8.4)
+│   ├── fdtd_benchmark.py     # FDTD benchmark suite — triple backward comparison, external cross-validation (N9.2)
 │   ├── fab_model.py          # Learned fabrication model (U-Net)
 │   └── resist.py             # Differentiable resist model
 ├── design/
@@ -428,6 +445,8 @@ diffnano/
 │   ├── designable_mask.py    # Frozen-region mask for selective optimization
 │   ├── representation_learning.py  # VAE latent optimization
 │   ├── latent_warmstart.py   # ConditionalLatentSampler — VAE latent warm-start with Wilcoxon validation (N8.3)
+│   ├── quantized.py          # STE quantized inverse design — StraightThroughQuantize, BinarySTE, QuantizedOptimizer (N9.1)
+│   ├── robust_warm_start.py  # Robust posterior warm start — angle sweep, process-corner quantile scoring (N9.3)
 │   ├── constraints_shared/   # Cross-domain DFM primitives
 │   └── robustness/
 │       ├── core.py           # MC robust optimization (reparameterization, antithetic)
@@ -465,6 +484,7 @@ diffnano/
 | v0.6 | Multi-objective Pareto + end-to-end + VAE | Done |
 | v0.7 | R-DIT backend (N7.1), Denman-Beavers matrix sqrt + gain layer protection (N7.2), cross-attention RCWA proxy (N7.3), real EM splitter workflow (N7.4) | Done |
 | v0.8 | Time-reversal adjoint FDTD (N8.1), LPA metasurface (N8.2), latent warm-start (N8.3), backend diagnostics (N8.4) | Done |
+| v0.9 | STE quantized inverse design (N9.1), FDTD benchmark suite (N9.2), robust posterior warm start (N9.3) | Done |
 | v1.0 | Full benchmark suite + validation + arXiv paper | Planned |
 
 ---
@@ -477,6 +497,9 @@ diffnano/
 - **DFM-native co-design:** The only open-source EM tool that puts lithography + EM + robustness on a single autograd graph. Most alternatives (Tidy3D, meent, FDTDX) are single-domain — they don't touch lithography at all.
 - **Time-reversal FDTD adjoint:** Memory-efficient adjoint via time-reversal (no need to store all forward fields), enabling gradient-based optimization for larger grids than conventional adjoint methods.
 - **LPA for large-area metasurfaces:** Local Periodic Approximation enables design of metasurfaces far beyond the reach of full-wave RCWA/FDTD, with two-level optimization.
+- **STE quantized inverse design (N9.1):** End-to-end differentiable quantization via straight-through estimator, enabling binary/ternary design parameter spaces within continuous optimization.
+- **Robust posterior warm start (N9.3):** Worst-case angle and process-corner quantile scoring for warm-start candidate selection, improving convergence in multi-scenario design problems.
+- **FDTD benchmark suite (N9.2):** Triple backward-mode comparison framework with external solver cross-validation API, enabling systematic gradient correctness validation.
 
 **Where it lags (honest assessment):**
 - **Scale:** Single GPU, moderate apertures. 2-4 orders of magnitude behind Tidy3D (cloud GPU FDTD), FDTDX (multi-GPU 3D AD-FDTD), and meent (multi-backend RCWA) in solver speed and problem size.
