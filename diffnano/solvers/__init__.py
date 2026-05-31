@@ -34,6 +34,12 @@ __all__ = [
     "SystolicUpdateEvaluator",
     "BenchmarkConfig",
     "BenchmarkResult",
+    "GPUMemoryStrategy",
+    "FDTDBenchmarkConfig",
+    "FDTDGPUBenchmark",
+    "MultiScaleMetalens",
+    "FDTDXCrossValidator",
+    "StabilityReport",
 ]
 
 
@@ -139,4 +145,15 @@ def __getattr__(name):
         from diffnano.solvers import fdtd_benchmark
 
         return getattr(fdtd_benchmark, name)
+    if name in (
+        "GPUMemoryStrategy",
+        "FDTDBenchmarkConfig",
+        "FDTDGPUBenchmark",
+        "MultiScaleMetalens",
+        "FDTDXCrossValidator",
+        "StabilityReport",
+    ):
+        from diffnano.solvers import fdtd_benchmark_gpu
+
+        return getattr(fdtd_benchmark_gpu, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
