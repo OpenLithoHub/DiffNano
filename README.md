@@ -469,6 +469,24 @@ diffnano/
 
 ---
 
+## Competitive Positioning
+
+**What it is:** A differentiable nanophotonics inverse design toolkit with clean-room FDTD adjoint, RCWA, and LPA — with native DFM/lithography co-design integration.
+
+**Where it leads:**
+- **DFM-native co-design:** The only open-source EM tool that puts lithography + EM + robustness on a single autograd graph. Most alternatives (Tidy3D, meent, FDTDX) are single-domain — they don't touch lithography at all.
+- **Time-reversal FDTD adjoint:** Memory-efficient adjoint via time-reversal (no need to store all forward fields), enabling gradient-based optimization for larger grids than conventional adjoint methods.
+- **LPA for large-area metasurfaces:** Local Periodic Approximation enables design of metasurfaces far beyond the reach of full-wave RCWA/FDTD, with two-level optimization.
+
+**Where it lags (honest assessment):**
+- **Scale:** Single GPU, moderate apertures. 2-4 orders of magnitude behind Tidy3D (cloud GPU FDTD), FDTDX (multi-GPU 3D AD-FDTD), and meent (multi-backend RCWA) in solver speed and problem size.
+- **Validation:** Self-tests + numerical cross-validation against meent RCWA. No experimental or fab validation.
+- **Maturity:** Research prototype. No production EDA integration.
+
+**Bottom line:** Competitively unique in the DFM co-design niche, but cannot compete on solver scale or speed with dedicated EM tools. Value is in the lithography-aware inverse design workflow, not raw FDTD/RCWA performance.
+
+---
+
 ## License
 
 Apache License 2.0
