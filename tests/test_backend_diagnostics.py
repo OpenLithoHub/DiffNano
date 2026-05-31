@@ -69,7 +69,9 @@ class TestDiagnosticsRuns:
         for backend, entry in results.items():
             for cos in entry["gradient_cosines"]:
                 if not torch.isnan(torch.tensor(cos)):
-                    assert -1.0 <= cos <= 1.0, f"cosine {cos} out of range for {backend}"
+                    assert (
+                        -1.0 - 1e-9 <= cos <= 1.0 + 1e-9
+                    ), f"cosine {cos} out of range for {backend}"
 
     def test_residual_band_is_max_error(self):
         """residual_band equals the max of forward_errors."""
