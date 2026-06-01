@@ -1,5 +1,6 @@
 """Design parameterization, projection, constraint, mask, latent warm-start,
-quantization, latent diffusion, adjoint diffusion, extrapolation, and multi-fidelity."""
+quantization, latent diffusion, adjoint diffusion, extrapolation, multi-fidelity,
+and GPU benchmark."""
 
 from diffnano.design.adjoint_diffusion import (
     AdjointDiffusionBenchmark,
@@ -10,6 +11,14 @@ from diffnano.design.extrapolation import (
     CurrentDiffusionConditioner,
     ExtrapolationBenchmark,
     ExtrapolationDesigner,
+)
+from diffnano.design.gpu_benchmark import (
+    ConvergenceRecord,
+    FDTDGPURealBenchmark,
+    GPUDeviceMetrics,
+    Metalens3DConfig,
+    Metalens3DDesigner,
+    MultiScaleBenchmark,
 )
 from diffnano.design.latent_diffusion import (
     ConditionedDiffusion,
@@ -42,9 +51,15 @@ __all__ = [
     "AdjointDiffusionDesigner",
     "AdjointGuidance",
     "BinarySTE",
+    "ConvergenceRecord",
     "CurrentDiffusionConditioner",
     "ExtrapolationBenchmark",
     "ExtrapolationDesigner",
+    "FDTDGPURealBenchmark",
+    "GPUDeviceMetrics",
+    "Metalens3DConfig",
+    "Metalens3DDesigner",
+    "MultiScaleBenchmark",
     "QuantizationNoiseGuardrail",
     "QuantizedOptimizer",
     "StraightThroughQuantize",
