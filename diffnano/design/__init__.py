@@ -1,5 +1,16 @@
-"""Design parameterization, projection, constraint, mask, latent warm-start, quantization, latent diffusion, and multi-fidelity."""
+"""Design parameterization, projection, constraint, mask, latent warm-start,
+quantization, latent diffusion, adjoint diffusion, extrapolation, and multi-fidelity."""
 
+from diffnano.design.adjoint_diffusion import (
+    AdjointDiffusionBenchmark,
+    AdjointDiffusionDesigner,
+    AdjointGuidance,
+)
+from diffnano.design.extrapolation import (
+    CurrentDiffusionConditioner,
+    ExtrapolationBenchmark,
+    ExtrapolationDesigner,
+)
 from diffnano.design.latent_diffusion import (
     ConditionedDiffusion,
     LatentDecoder,
@@ -27,7 +38,13 @@ from diffnano.design.robust_warm_start import (
 )
 
 __all__ = [
+    "AdjointDiffusionBenchmark",
+    "AdjointDiffusionDesigner",
+    "AdjointGuidance",
     "BinarySTE",
+    "CurrentDiffusionConditioner",
+    "ExtrapolationBenchmark",
+    "ExtrapolationDesigner",
     "QuantizationNoiseGuardrail",
     "QuantizedOptimizer",
     "StraightThroughQuantize",
